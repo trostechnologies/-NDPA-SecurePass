@@ -1,0 +1,8 @@
+{
+  "name": "SecurePass NDPA - Enterprise Visitor Management",
+  "description": "Enterprise-grade visitor registration, badge issuance, and access governance system compliant with the Nigerian Data Protection Act (NDPA 2023).",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
