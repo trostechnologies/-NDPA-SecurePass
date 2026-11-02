@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -15,7 +15,8 @@
   body * {
     visibility: hidden;
   }
-  #printable-badge-area, #printable-badge-area * {
+  #printable-badge-area,
+  #printable-badge-area * {
     visibility: visible;
   }
   #printable-badge-area {

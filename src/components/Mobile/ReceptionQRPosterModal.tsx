@@ -5,7 +5,16 @@
 
 import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { QrCode, X, Printer, ExternalLink, Copy, Check, Smartphone, ShieldCheck } from 'lucide-react';
+import {
+  QrCode,
+  X,
+  Printer,
+  ExternalLink,
+  Copy,
+  Check,
+  Smartphone,
+  ShieldCheck,
+} from 'lucide-react';
 import { NDPA_ORGANIZATION_INFO } from '../../utils/ndpaCompliance';
 
 interface ReceptionQRPosterModalProps {
@@ -22,22 +31,12 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Compute the public shared URL that doesn't require Google authentication
-  const getPublicBaseUrl = () => {
-    if (typeof window === 'undefined') return 'https://ais-pre-rayw6msee7266veof7o7n5-698969150133.europe-west1.run.app';
-    const origin = window.location.origin;
-    // Replace ais-dev- with ais-pre- so that it points to the public Shared App URL
-    if (origin.includes('ais-dev-')) {
-      return origin.replace('ais-dev-', 'ais-pre-');
-    }
-    return origin;
-  };
-
-  const defaultPublicUrl = `${getPublicBaseUrl()}?mode=mobile`;
-  const [customUrl, setCustomUrl] = useState<string>(defaultPublicUrl);
-  const [isEditingUrl, setIsEditingUrl] = useState<boolean>(false);
-
-  const activeUrl = customUrl.trim() || defaultPublicUrl;
+  const url = new URL(
+    typeof window === 'undefined' ? 'http://localhost:3000' : window.location.href,
+  );
+  url.searchParams.set('mode', 'mobile');
+  const defaultPublicUrl = url.toString();
+  const activeUrl = defaultPublicUrl;
 
   useEffect(() => {
     if (isOpen) {
@@ -49,8 +48,8 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
           light: '#ffffff',
         },
       })
-        .then(url => setQrDataUrl(url))
-        .catch(err => console.error('Failed to generate poster QR:', err));
+        .then((url) => setQrDataUrl(url))
+        .catch((err) => console.error('Failed to generate poster QR:', err));
     }
   }, [isOpen, activeUrl]);
 
@@ -162,49 +161,16 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
             {/* NDPA Regulatory Footer */}
             <div className="w-full pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[9px] text-slate-400 font-mono">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}</span>
+              <span>
+                Controller registration (as configured):{' '}
+                {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+              </span>
             </div>
           </div>
         </div>
 
-        {/* URL Configuration Accordion */}
-        <div className="px-6 py-3 bg-slate-950/80 border-t border-slate-800 text-xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-400 font-medium">QR Code Destination Link:</span>
-            <button
-              type="button"
-              onClick={() => setIsEditingUrl(!isEditingUrl)}
-              className="text-emerald-400 hover:text-emerald-300 font-mono text-[11px]"
-            >
-              {isEditingUrl ? 'Close URL Settings' : 'Custom Domain / Edit URL'}
-            </button>
-          </div>
-
-          {isEditingUrl ? (
-            <div className="space-y-2 pt-1 animate-in fade-in">
-              <input
-                type="text"
-                value={customUrl}
-                onChange={(e) => setCustomUrl(e.target.value)}
-                placeholder="https://..."
-                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs font-mono text-slate-100 focus:outline-none focus:border-emerald-400"
-              />
-              <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>Directs guests to the public preview (bypasses Google login).</span>
-                <button
-                  type="button"
-                  onClick={() => setCustomUrl(defaultPublicUrl)}
-                  className="text-slate-400 hover:text-slate-200 underline"
-                >
-                  Reset to Default Public URL
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="text-[11px] font-mono text-emerald-400/90 truncate bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800">
-              {activeUrl}
-            </div>
-          )}
+        <div className="px-6 py-3 bg-slate-950 text-xs break-all">
+          Reception link for this site: {activeUrl}
         </div>
 
         {/* Modal Action Controls */}
@@ -215,7 +181,11 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
               onClick={handleCopyUrl}
               className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
               <span>{copied ? 'URL Copied!' : 'Copy Mobile Link'}</span>
             </button>
             <button

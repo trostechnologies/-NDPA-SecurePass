@@ -1,5 +1,7 @@
 # Security implementation status
 
-See [SECURITY_FIXES.md](SECURITY_FIXES.md) for the current remediation, validation limits, upgrade behavior and deployment requirements.
+SecurePass supports both separate customer/site installations and a shared customer/site service with scoped authorization.
 
-This remains a single-customer security foundation. Full build, browser integration and deployment checks must pass before production release.
+See [REAUDIT_IMPLEMENTATION.md](REAUDIT_IMPLEMENTATION.md) for finding coverage, verification and remaining deployment acceptance work, and [deploy/OPERATIONS.md](deploy/OPERATIONS.md) for installation, secrets, migration, recovery and audit custody.
+
+The implementation does not certify legal compliance or a deployed environment. Live container/TLS acceptance, external immutable custody and actual gate hardware integration remain deployment responsibilities.

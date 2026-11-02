@@ -168,10 +168,7 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
                   const displayEmail = maskPII ? maskEmail(visitor.email) : visitor.email;
 
                   return (
-                    <tr
-                      key={visitor.id}
-                      className="hover:bg-slate-800/40 transition-colors group"
-                    >
+                    <tr key={visitor.id} className="hover:bg-slate-800/40 transition-colors group">
                       {/* Visitor Name & Pass Code */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
@@ -197,7 +194,8 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
                               )}
                             </div>
                             <div className="text-[11px] text-slate-400 font-mono">
-                              {visitor.passCode} · <span className="text-slate-500">{visitor.organization}</span>
+                              {visitor.passCode} ·{' '}
+                              <span className="text-slate-500">{visitor.organization}</span>
                             </div>
                           </div>
                         </div>
@@ -306,7 +304,7 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
                               onClick={() => {
                                 if (
                                   confirm(
-                                    `Execute NDPA Section 37 Right to Erasure for ${visitor.fullName}? Primary visitor and associated invitations will be deleted. Backups and exported copies require separate management.`
+                                    `Request verified erasure for ${visitor.fullName}? A different administrator must verify identity before any deletion.`,
                                   )
                                 ) {
                                   onErasureRequest(visitor.id);

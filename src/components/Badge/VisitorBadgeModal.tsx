@@ -7,7 +7,17 @@ import React, { useEffect, useState } from 'react';
 import { badgeReference } from '../../utils/security';
 import QRCode from 'qrcode';
 import { Visitor } from '../../types/visitor';
-import { Printer, Download, X, ShieldCheck, Wifi, UserCheck, Calendar, Clock, Building2 } from 'lucide-react';
+import {
+  Printer,
+  Download,
+  X,
+  ShieldCheck,
+  Wifi,
+  UserCheck,
+  Calendar,
+  Clock,
+  Building2,
+} from 'lucide-react';
 import { NDPA_ORGANIZATION_INFO } from '../../utils/ndpaCompliance';
 
 interface VisitorBadgeModalProps {
@@ -16,11 +26,15 @@ interface VisitorBadgeModalProps {
   onClose: () => void;
 }
 
-export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, isOpen, onClose }) => {
+export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({
+  visitor,
+  isOpen,
+  onClose,
+}) => {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   useEffect(() => {
-    let active=true;
+    let active = true;
     setQrDataUrl('');
     if (visitor) {
       const payload = badgeReference(visitor); // Not an access credential; scanner verification is pending.
@@ -33,10 +47,14 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
           light: '#ffffff',
         },
       })
-        .then(url => {if(active)setQrDataUrl(url);})
-        .catch(err => console.error('QR code generation error:', err));
+        .then((url) => {
+          if (active) setQrDataUrl(url);
+        })
+        .catch((err) => console.error('QR code generation error:', err));
     }
-    return ()=>{active=false;};
+    return () => {
+      active = false;
+    };
   }, [visitor]);
 
   if (!isOpen || !visitor) return null;
@@ -46,7 +64,11 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
   };
 
   const handleDownload = () => {
-    const jsonStr = JSON.stringify({badgeId: visitor.badgeId, passCode: visitor.passCode}, null, 2);
+    const jsonStr = JSON.stringify(
+      { badgeId: visitor.badgeId, passCode: visitor.passCode },
+      null,
+      2,
+    );
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -74,7 +96,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
-            <h2 className="text-base font-semibold text-slate-100">Enterprise Visitor Pass</h2>
+            <h2 className="text-base font-semibold text-slate-100">Visitor Registration</h2>
           </div>
           <button
             onClick={onClose}
@@ -112,6 +134,13 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
                 </div>
               </div>
 
+              <p className="mt-3 text-[10px] text-slate-600">
+                {visitor.accessStatus === 'authorized'
+                  ? `Online gate authorization expires ${visitor.accessExpiresAt}`
+                  : visitor.accessStatus === 'pending'
+                    ? 'Gate approval required. Registration does not authorize entry.'
+                    : 'Reception registration. Follow reception instructions for entry.'}
+              </p>
               {/* Clearance Ribbon */}
               <div className="mt-3 flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded">
@@ -203,19 +232,26 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
 
                 <div className="flex flex-col items-center">
                   {qrDataUrl ? (
-                    <img src={qrDataUrl} alt="Visitor QR" className="w-20 h-20 rounded border border-slate-200" />
+                    <img
+                      src={qrDataUrl}
+                      alt="Visitor QR"
+                      className="w-20 h-20 rounded border border-slate-200"
+                    />
                   ) : (
                     <div className="w-20 h-20 bg-slate-100 flex items-center justify-center text-[10px] text-slate-400">
                       QR Code
                     </div>
                   )}
-                  <span className="text-[8px] font-mono text-slate-400 mt-0.5">VISIT REFERENCE</span>
+                  <span className="text-[8px] font-mono text-slate-400 mt-0.5">
+                    VISIT REFERENCE
+                  </span>
                 </div>
               </div>
 
               {/* NDPA Footnote */}
               <div className="mt-3 pt-2 border-t border-slate-100 text-[8px] text-slate-400 text-center leading-tight">
-                Issued in compliance with Nigeria Data Protection Act (NDPA 2023). Must be worn visibly at all times and surrendered upon departure.
+                Issued in compliance with Nigeria Data Protection Act (NDPA 2023). Must be worn
+                visibly at all times and surrendered upon departure.
               </div>
             </div>
           </div>
@@ -223,9 +259,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
 
         {/* Actions Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-900">
-          <div className="text-xs text-slate-400">
-            Thermal or A4 Avery printer ready
-          </div>
+          <div className="text-xs text-slate-400">Thermal or A4 Avery printer ready</div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleDownload}

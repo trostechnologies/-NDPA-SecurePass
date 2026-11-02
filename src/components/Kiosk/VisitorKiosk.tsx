@@ -47,16 +47,17 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
   invitations,
   onCheckInComplete,
   onOpenBadge,
-  initialInviteCode='',
+  initialInviteCode = '',
 }) => {
   const [mode, setMode] = useState<'walk_in' | 'redeem_invite'>('walk_in');
 
   // Form State for Walk-In
   const [step, setStep] = useState<number>(1);
   const submitting = useRef(false);
-  const [busy,setBusy]=useState(false);
-  const [submitError,setSubmitError]=useState('');
-  const [verifiedCode,setVerifiedCode]=useState('');
+  const [busy, setBusy] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [verifiedCode, setVerifiedCode] = useState('');
+  const [invitationHost, setInvitationHost] = useState<HostEmployee | null>(null);
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
@@ -85,23 +86,41 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
   // Filter hosts
   const [hostSearch, setHostSearch] = useState<string>('');
   const filteredHosts = hosts.filter(
-    h =>
+    (h) =>
       h.name.toLowerCase().includes(hostSearch.toLowerCase()) ||
       h.department.toLowerCase().includes(hostSearch.toLowerCase()) ||
-      h.title.toLowerCase().includes(hostSearch.toLowerCase())
+      h.title.toLowerCase().includes(hostSearch.toLowerCase()),
   );
 
-  const selectedHost = hosts.find(h => h.id === selectedHostId) || hosts[0];
+  const selectedHost =
+    [...hosts, ...(invitationHost ? [invitationHost] : [])].find((h) => h.id === selectedHostId) ||
+    hosts[0];
 
-  const handleLookupInvite = async (code:string) => {
-    setInviteError(null);setVerifiedCode('');setMatchedInvite(null);
+  const handleLookupInvite = async (code: string) => {
+    setInviteError(null);
+    setVerifiedCode('');
+    setMatchedInvite(null);
     try {
-      const found=await api<{id:string;hostEmployeeId:string}>('/invitations/lookup',{method:'POST',body:jsonBody({inviteCode:code.trim().toUpperCase()})});
-      setSelectedHostId(found.hostEmployeeId);setVerifiedCode(code.trim().toUpperCase());
-      setMode('walk_in');setStep(1);setVisitType('pre_registered');
-    }catch(e){setInviteError(e instanceof Error?e.message:'Invitation unavailable');}
+      const found = await api<{ id: string; hostEmployeeId: string; publicHost: HostEmployee }>(
+        '/invitations/lookup',
+        { method: 'POST', body: jsonBody({ inviteCode: code.trim().toUpperCase() }) },
+      );
+      setInvitationHost(found.publicHost);
+      setSelectedHostId(found.hostEmployeeId);
+      setVerifiedCode(code.trim().toUpperCase());
+      setMode('walk_in');
+      setStep(1);
+      setVisitType('pre_registered');
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : 'Invitation unavailable');
+    }
   };
-  useEffect(()=>{if(initialInviteCode){setInviteCodeInput(initialInviteCode);void handleLookupInvite(initialInviteCode);}},[initialInviteCode]);
+  useEffect(() => {
+    if (initialInviteCode) {
+      setInviteCodeInput(initialInviteCode);
+      void handleLookupInvite(initialInviteCode);
+    }
+  }, [initialInviteCode]);
   const handleFinalSubmit = async () => {
     if (!fullName || !email || !phone) {
       alert('Please fill in your Name, Email, and Phone Number.');
@@ -112,7 +131,10 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
       return;
     }
 
-    const host = hosts.find(h => h.id === selectedHostId) || hosts[0];
+    const host =
+      [...hosts, ...(invitationHost ? [invitationHost] : [])].find(
+        (h) => h.id === selectedHostId,
+      ) || hosts[0];
 
     // Mask ID number for data minimization (NDPA Sec 24(1)(c))
     let maskedId = '';
@@ -121,61 +143,80 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
       maskedId = clean.length > 4 ? `•••• •••• ${clean.slice(-4)}` : '••••';
     }
 
-    if(!host){setSubmitError('Select a host.');return;}
-    if(submitting.current)return;
-    submitting.current=true;setBusy(true);setSubmitError('');
+    if (!host) {
+      setSubmitError('Select a host.');
+      return;
+    }
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setSubmitError('');
     try {
-    const newVisitor: Visitor = {
-      id: `VIS-2026-${Math.floor(100 + Math.random() * 900)}`,
-      passCode: generatePassCode(),
-      fullName: fullName.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      organization: organization.trim() || 'Independent Visitor',
-      hostEmployeeId: host.id,
-      hostEmployeeName: host.name,
-      hostDepartment: host.department,
-      purpose: purpose.trim(),
-      visitType: matchedInvite ? 'pre_registered' : visitType,
-      checkInTime: new Date().toISOString(),
-      status: 'checked_in',
-      hasBiometricPhoto: Boolean(photoUrl && biometricConsent),
-      photoUrl: photoUrl && biometricConsent ? photoUrl : undefined,
-      biometricConsentGranted: Boolean(photoUrl && biometricConsent),
-      generalConsentGranted: true,
-      consentTimestamp: new Date().toISOString(),
-      vehiclePlate: vehiclePlate.trim() || undefined,
-      badgePrinted: false,
-      retentionExpiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 60).toISOString(), // 60 days
-      securityClearance:'Standard',
-      wifiAccessGranted: false,
-      wifiCode: generateWifiCode(),
-      badgeId: generateBadgeId(),
-    };
+      const newVisitor: Visitor = {
+        id: `VIS-2026-${Math.floor(100 + Math.random() * 900)}`,
+        passCode: generatePassCode(),
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        organization: organization.trim() || 'Independent Visitor',
+        hostEmployeeId: host.id,
+        hostEmployeeName: host.name,
+        hostDepartment: host.department,
+        purpose: purpose.trim(),
+        visitType: matchedInvite ? 'pre_registered' : visitType,
+        checkInTime: new Date().toISOString(),
+        status: 'checked_in',
+        hasBiometricPhoto: Boolean(photoUrl && biometricConsent),
+        photoUrl: photoUrl && biometricConsent ? photoUrl : undefined,
+        biometricConsentGranted: Boolean(photoUrl && biometricConsent),
+        generalConsentGranted: true,
+        consentTimestamp: new Date().toISOString(),
+        vehiclePlate: vehiclePlate.trim() || undefined,
+        badgePrinted: false,
+        retentionExpiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 60).toISOString(), // 60 days
+        securityClearance: 'Standard',
+        wifiAccessGranted: false,
+        wifiCode: generateWifiCode(),
+        badgeId: generateBadgeId(),
+      };
 
-    const saved=await onCheckInComplete(newVisitor,verifiedCode||undefined);
-    onOpenBadge(saved);
+      const saved = await onCheckInComplete(newVisitor, verifiedCode || undefined);
+      onOpenBadge(saved);
 
-    // Reset form
-    setStep(1);
-    setFullName('');
-    setEmail('');
-    setPhone('');
-    setOrganization('');
-    setVehiclePlate('');
-    setGovIdNumber('');
-    setPhotoUrl(null);
-    setBiometricConsent(false);
-    setMatchedInvite(null);
-    setInviteCodeInput('');setVerifiedCode('');setGeneralConsent(false);
-    }catch(e){setSubmitError(e instanceof Error?e.message:'Check-in failed');}
-    finally{submitting.current=false;setBusy(false);}
+      // Reset form
+      setStep(1);
+      setFullName('');
+      setEmail('');
+      setPhone('');
+      setOrganization('');
+      setVehiclePlate('');
+      setGovIdNumber('');
+      setPhotoUrl(null);
+      setBiometricConsent(false);
+      setMatchedInvite(null);
+      setInviteCodeInput('');
+      setVerifiedCode('');
+      setGeneralConsent(false);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : 'Check-in failed');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {submitError&&<p role="alert" className="text-red-300">{submitError}</p>}
-      {verifiedCode&&<p className="text-emerald-300">Invitation found. Enter the guest details and invitation email to complete check-in.</p>}
+      {submitError && (
+        <p role="alert" className="text-red-300">
+          {submitError}
+        </p>
+      )}
+      {verifiedCode && (
+        <p className="text-emerald-300">
+          Invitation found. Enter the guest details and invitation email to complete check-in.
+        </p>
+      )}
       {/* Clean Compact Kiosk Header (Image banner removed) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg">
         <div>
@@ -196,7 +237,8 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
             type="button"
             onClick={() => {
               setMode('walk_in');
-              setMatchedInvite(null);setVerifiedCode('');
+              setMatchedInvite(null);
+              setVerifiedCode('');
             }}
             className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
               mode === 'walk_in'
@@ -229,7 +271,8 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
               <span>Redeem Pre-Registered Guest Pass</span>
             </div>
             <p className="text-xs text-slate-400">
-              Enter the unique invite code sent to your email by your host for expedited 10-second check-in.
+              Enter the unique invite code sent to your email by your host for expedited 10-second
+              check-in.
             </p>
           </div>
 
@@ -274,15 +317,20 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   </p>
                 </div>
                 <div className="text-right text-xs text-slate-400">
-                  <div className="font-semibold text-slate-300">Host: {matchedInvite.hostEmployeeName}</div>
+                  <div className="font-semibold text-slate-300">
+                    Host: {matchedInvite.hostEmployeeName}
+                  </div>
                   <div>{matchedInvite.hostDepartment}</div>
-                  <div className="text-emerald-400 font-mono mt-0.5">Time: {matchedInvite.expectedTime}</div>
+                  <div className="text-emerald-400 font-mono mt-0.5">
+                    Time: {matchedInvite.expectedTime}
+                  </div>
                 </div>
               </div>
 
               {matchedInvite.specialInstructions && (
                 <div className="text-xs text-slate-300 bg-slate-900 p-2.5 rounded-lg border border-slate-800">
-                  <strong className="text-slate-200">Host Note:</strong> {matchedInvite.specialInstructions}
+                  <strong className="text-slate-200">Host Note:</strong>{' '}
+                  {matchedInvite.specialInstructions}
                   {matchedInvite.parkingReserved && (
                     <span className="ml-2 text-emerald-400">· Reserved Parking Stall Active</span>
                   )}
@@ -291,7 +339,9 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
 
               {/* Optional Camera for Invited Guest */}
               <div className="pt-2">
-                <p className="text-sm text-slate-400">Photo collection is disabled. Continue without a photo.</p>
+                <p className="text-sm text-slate-400">
+                  Photo collection is disabled. Continue without a photo.
+                </p>
               </div>
 
               {/* Instant Check-In Button */}
@@ -334,17 +384,17 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   {step === 4 && 'Privacy acknowledgement'}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  {step === 1 && 'Basic identity details required under NDPA principles of data minimization.'}
-                  {step === 2 && 'Designate the official staff member or department hosting your visit.'}
+                  {step === 1 &&
+                    'Basic identity details required under NDPA principles of data minimization.'}
+                  {step === 2 &&
+                    'Designate the official staff member or department hosting your visit.'}
                   {step === 3 && 'Photo collection is disabled in this release.'}
                   {step === 4 && 'Review the privacy notice before saving your visit.'}
                 </p>
               </div>
             </div>
 
-            <div className="text-xs font-mono text-slate-500">
-              Step {step} of 4
-            </div>
+            <div className="text-xs font-mono text-slate-500">Step {step} of 4</div>
           </div>
 
           {/* STEP 1: PERSONAL DETAILS */}
@@ -426,16 +476,16 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                 </div>
 
                 <p className="text-xs text-slate-400">Government-ID collection is disabled.</p>
-
               </div>
-
 
               <div className="flex justify-end pt-4">
                 <button
                   type="button"
                   onClick={() => {
                     if (!fullName || !email || !phone) {
-                      alert('Please complete the required fields: Full Name, Email, and Phone Number.');
+                      alert(
+                        'Please complete the required fields: Full Name, Email, and Phone Number.',
+                      );
                       return;
                     }
                     setStep(2);
@@ -515,14 +565,30 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     onChange={(e) => setPurpose(e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-400"
                   >
-                    <option value="Business Meeting & Partnership">Business Meeting &amp; Partnership</option>
-                    <option value="Executive Boardroom Briefing">Executive Boardroom Briefing</option>
-                    <option value="Regulatory Inspection & Audit">Regulatory Inspection &amp; Audit</option>
-                    <option value="Recruitment & Job Interview">Recruitment &amp; Job Interview</option>
-                    <option value="IT Infrastructure & Data Center Maintenance">IT Infrastructure &amp; Data Center Maintenance</option>
-                    <option value="Vendor Delivery & Supplies">Vendor Delivery &amp; Supplies</option>
-                    <option value="Facilities / Engineering Contractor">Facilities / Engineering Contractor</option>
-                    <option value="Legal & Compliance Consultation">Legal &amp; Compliance Consultation</option>
+                    <option value="Business Meeting & Partnership">
+                      Business Meeting &amp; Partnership
+                    </option>
+                    <option value="Executive Boardroom Briefing">
+                      Executive Boardroom Briefing
+                    </option>
+                    <option value="Regulatory Inspection & Audit">
+                      Regulatory Inspection &amp; Audit
+                    </option>
+                    <option value="Recruitment & Job Interview">
+                      Recruitment &amp; Job Interview
+                    </option>
+                    <option value="IT Infrastructure & Data Center Maintenance">
+                      IT Infrastructure &amp; Data Center Maintenance
+                    </option>
+                    <option value="Vendor Delivery & Supplies">
+                      Vendor Delivery &amp; Supplies
+                    </option>
+                    <option value="Facilities / Engineering Contractor">
+                      Facilities / Engineering Contractor
+                    </option>
+                    <option value="Legal & Compliance Consultation">
+                      Legal &amp; Compliance Consultation
+                    </option>
                   </select>
                 </div>
 
@@ -565,7 +631,9 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
           {/* STEP 3: OPTIONAL BIOMETRIC PHOTO CAPTURE */}
           {step === 3 && (
             <div className="space-y-4">
-              <p className="text-sm text-slate-400">Photo collection is disabled. Continue without a photo.</p>
+              <p className="text-sm text-slate-400">
+                Photo collection is disabled. Continue without a photo.
+              </p>
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 <button
@@ -610,13 +678,18 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   <div>
                     <span className="text-slate-500 block">Biometric Photo</span>
                     <span className="text-slate-300 block">
-                      {photoUrl && biometricConsent ? 'Captured (Consented)' : 'Collection disabled'}
+                      {photoUrl && biometricConsent
+                        ? 'Captured (Consented)'
+                        : 'Collection disabled'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-400">Standard reception registration. This pass does not authorize physical access or provision Wi-Fi.</p>
+              <p className="text-xs text-slate-400">
+                Standard reception registration. This pass does not authorize physical access or
+                provision Wi-Fi.
+              </p>
 
               {/* Statutory Legal Consent Checkbox */}
               <div className="p-4 bg-slate-950 border border-emerald-900/40 rounded-xl space-y-3">
@@ -642,7 +715,8 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400"
                   />
                   <span className="leading-relaxed">
-                    {NDPA_ORGANIZATION_INFO.privacyNoticeText} I acknowledge notice version {NDPA_ORGANIZATION_INFO.noticeVersion}.
+                    {NDPA_ORGANIZATION_INFO.privacyNoticeText} I acknowledge notice version{' '}
+                    {NDPA_ORGANIZATION_INFO.noticeVersion}.
                   </span>
                 </label>
               </div>

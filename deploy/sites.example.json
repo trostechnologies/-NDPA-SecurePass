@@ -1,0 +1,41 @@
+[
+  {
+    "key": "customer-a-lagos",
+    "tenantId": "customer-a",
+    "siteId": "lagos",
+    "companyName": "REPLACE WITH CONTROLLER A",
+    "facilityName": "REPLACE WITH LAGOS FACILITY",
+    "dpoEmail": "privacy@example.org",
+    "noticeVersion": "REPLACE-WITH-REVIEWED-VERSION",
+    "privacyNoticeText": "REPLACE WITH THE CONTROLLER-APPROVED PRIVACY NOTICE",
+    "dataRetentionDays": 60,
+    "publicDirectory": false,
+    "backupRetentionDays": 7
+  },
+  {
+    "key": "customer-a-abuja",
+    "tenantId": "customer-a",
+    "siteId": "abuja",
+    "companyName": "REPLACE WITH CONTROLLER A",
+    "facilityName": "REPLACE WITH ABUJA FACILITY",
+    "dpoEmail": "privacy@example.org",
+    "noticeVersion": "REPLACE-WITH-REVIEWED-VERSION",
+    "privacyNoticeText": "REPLACE WITH THE CONTROLLER-APPROVED PRIVACY NOTICE",
+    "dataRetentionDays": 60,
+    "publicDirectory": false,
+    "backupRetentionDays": 7
+  },
+  {
+    "key": "customer-b-lagos",
+    "tenantId": "customer-b",
+    "siteId": "lagos",
+    "companyName": "REPLACE WITH CONTROLLER B",
+    "facilityName": "REPLACE WITH CUSTOMER B FACILITY",
+    "dpoEmail": "privacy@example.org",
+    "noticeVersion": "REPLACE-WITH-REVIEWED-VERSION",
+    "privacyNoticeText": "REPLACE WITH THE CONTROLLER-APPROVED PRIVACY NOTICE",
+    "dataRetentionDays": 60,
+    "publicDirectory": false,
+    "backupRetentionDays": 7
+  }
+]

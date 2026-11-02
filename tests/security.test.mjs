@@ -1,106 +1,544 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import vm from 'node:vm';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import * as crypto from 'node:crypto';
-import { promisify } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
-import { stripTypeScriptTypes } from 'node:module';
+import * as OTPAuth from 'otpauth';
+import { fixture, site, adminEmail, adminPassword } from './helpers.mjs';
+import { digest, verifyFactor } from '../server/crypto.mjs';
+import { snapshotDatabase, restoreSnapshot } from '../server/backups.mjs';
+import { createApplication } from '../server/app.mjs';
+import { loadConfig } from '../server/config.mjs';
 
-const root=new URL('../',import.meta.url);
-// Execute actual server code, SQL and middleware against a temporary SQLite database.
-// Only the Express transport/parser and listening socket are replaced. HTTP/browser tests
-// remain separate checks; this harness does not claim to reproduce Express itself.
-async function fixture(directory){
- const dir=directory||fs.mkdtempSync(path.join(os.tmpdir(),'securepass-security-'));
- const uses=[],routes=new Map();
- const app={disable(){},set(){},listen(){}};
- app.use=(...args)=>{const prefix=typeof args[0]==='string'?args.shift():'';for(const fn of args)if(fn.length!==4)uses.push({prefix,fn});};
- for(const method of ['get','post','patch','delete'])app[method]=(route,...handlers)=>routes.set(`${method.toUpperCase()} ${route}`,[...uses.filter(x=>route.startsWith(x.prefix)).map(x=>x.fn),...handlers]);
- const express=()=>app;express.json=()=> (_req,_res,next)=>next();express.static=()=> (_req,_res,next)=>next();
- const env={SECUREPASS_DATA_DIR:dir,SECUREPASS_MAX_RECORDS:'100',SECUREPASS_MAX_AUDITS:'20',SECUREPASS_ORIGIN:'http://localhost:3000',SECUREPASS_COOKIE_SECURE:'false',SECUREPASS_ADMIN_EMAIL:'admin@example.test',SECUREPASS_ADMIN_PASSWORD:'unique-password-for-test-only-123'};
- const context={express,DatabaseSync,...crypto,promisify,Buffer,mkdirSync:fs.mkdirSync,chmodSync:fs.chmodSync,readFileSync:fs.readFileSync,path,process:{env},URL,console:{log(){},error(){}},setInterval:()=>({unref(){}})};
- const source=fs.readFileSync(new URL('server.mjs',root),'utf8').replace(/^import .*;\r?\n/gm,'').replaceAll('import.meta.url',JSON.stringify(new URL('server.mjs',root).href));
- const runtime=await vm.runInNewContext(`(async()=>{${source}\nreturn {db,purge,consume};})()`,context);
- async function request(method,url,{body={},cookie='',origin=env.SECUREPASS_ORIGIN,ip='127.0.0.1'}={}){
-  const u=new URL(url,env.SECUREPASS_ORIGIN);let match=routes.get(`${method} ${u.pathname}`),params={};
-  if(!match)for(const [key,stack]of routes){const [m,route]=key.split(' ');const names=[];const pattern=route.replace(/:([^/]+)/g,(_,n)=>{names.push(n);return '([^/]+)';});const found=u.pathname.match(new RegExp(`^${pattern}$`));if(m===method&&found){match=stack;params=Object.fromEntries(names.map((n,i)=>[n,found[i+1]]));break;}}
-  assert.ok(match,`No route ${method} ${url}`);
-  const req={method,body,ip,headers:{cookie},params,query:Object.fromEntries(u.searchParams),get:n=>n.toLowerCase()==='origin'?origin:undefined};
-  const res={code:200,headers:{},status(n){this.code=n;return this;},setHeader(n,v){this.headers[n.toLowerCase()]=v;},json(v){this.body=JSON.parse(JSON.stringify(v));return this;}};
-  async function run(i){if(i>=match.length)return;let pending;await match[i](req,res,e=>{pending=e?Promise.reject(e):run(i+1);return pending;});if(pending)await pending;}
-  await run(0);return res;
- }
- const login=()=>request('POST','/api/login',{body:{email:env.SECUREPASS_ADMIN_EMAIL,password:env.SECUREPASS_ADMIN_PASSWORD}});
- const cleanup=()=>{runtime.db.close();for(const suffix of ['','-wal','-shm']){const file=path.join(dir,'securepass.sqlite'+suffix);if(fs.existsSync(file))fs.unlinkSync(file);}fs.rmdirSync(dir);};
- return {...runtime,request,login,cleanup,dir,env};
-}
-
-test('authentication, immutable host ownership, redemption and linked erasure',async()=>{
- const f=await fixture();try{
-  assert.equal((await f.request('GET','/api/users')).code,401);
-  assert.equal((await f.request('POST','/api/login',{origin:'https://other.test'})).code,403);
-  const logged=await f.login();assert.equal(logged.code,200);
-  const cookie=logged.headers['set-cookie'].split(';')[0];assert.match(logged.headers['set-cookie'],/HttpOnly; SameSite=Strict/);
-  const staff=await f.request('POST','/api/users',{cookie,body:{name:'Same Display Name',email:'staff@example.test',password:'test-staff-password-12345',role:'staff'}});assert.equal(staff.code,201);
-  const staffLogin=await f.request('POST','/api/login',{body:{email:'staff@example.test',password:'test-staff-password-12345'}});const staffCookie=staffLogin.headers['set-cookie'].split(';')[0];
-  assert.equal((await f.request('GET','/api/users',{cookie:staffCookie})).code,403);
-  const hosts=(await f.request('GET','/api/hosts')).body;assert.equal(hosts.find(h=>h.id===staff.body.id).userId,staff.body.id);
-  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Lagos',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-  const inviteBody={guestName:'Guest',guestEmail:'guest@example.test',hostEmployeeId:staff.body.id,expectedDate:today,expectedTime:'12:00'};
-  assert.equal((await f.request('POST','/api/invitations',{cookie:staffCookie,body:{...inviteBody,hostEmployeeId:logged.body.user.id}})).code,403);
-  assert.equal((await f.request('POST','/api/invitations',{cookie:staffCookie,body:{...inviteBody,photoUrl:'sensitive'}})).code,400);
-  const invite=await f.request('POST','/api/invitations',{cookie:staffCookie,body:inviteBody});assert.equal(invite.code,201);assert.equal(invite.body.createdByUserId,staff.body.id);
-  assert.equal((await f.request('GET','/api/data',{cookie:staffCookie})).body.invitations.length,1);
-  const lookup=await f.request('POST','/api/invitations/lookup',{body:{inviteCode:invite.body.inviteCode}});assert.equal(lookup.code,200);assert.equal(lookup.body.guestName,undefined);assert.equal(lookup.body.guestEmail,undefined);
-  const checkin={fullName:'=1+1',email:'guest@example.test',phone:'+2348000000000',hostEmployeeId:staff.body.id,generalConsentGranted:true,noticeVersion:'development-1',inviteCode:invite.body.inviteCode};
-  assert.equal((await f.request('POST','/api/checkin',{body:{...checkin,noticeVersion:'old'}})).code,400);
-  assert.equal((await f.request('POST','/api/checkin',{body:{...checkin,email:'other@example.test'}})).code,409);
-  const saved=await f.request('POST','/api/checkin',{body:checkin});assert.equal(saved.code,201);assert.equal(saved.body.visitType,'pre_registered');assert.equal(saved.body.photoUrl,undefined);assert.equal(saved.body.wifiAccessGranted,false);
-  assert.equal((await f.request('POST','/api/checkin',{body:checkin})).code,409);
-  assert.equal((await f.request('POST',`/api/visitors/${saved.body.id}/erase`,{cookie:staffCookie})).code,403);
-  assert.equal((await f.request('POST',`/api/visitors/${saved.body.id}/erase`,{cookie})).code,200);
-  assert.equal((await f.request('GET','/api/data',{cookie:staffCookie})).body.invitations.length,0);
-  await f.request('PATCH',`/api/users/${staff.body.id}`,{cookie,body:{status:'suspended'}});
-  assert.equal((await f.request('GET','/api/session',{cookie:staffCookie})).code,401);
- }finally{f.cleanup();}
+test('real HTTP: authentication, Origin, JSON limits, role guards, suspension and logout', async () => {
+  const f = await fixture();
+  try {
+    assert.equal((await f.request('GET', '/api/users')).status, 401);
+    assert.equal(
+      (await f.request('POST', '/api/login', { body: {}, origin: 'https://other.test' })).status,
+      403,
+    );
+    assert.equal((await f.request('POST', '/api/checkin', { body: '{' })).status, 400);
+    assert.equal(
+      (await f.request('POST', '/api/checkin', { body: { fullName: 'x'.repeat(17000) } })).status,
+      413,
+    );
+    const logged = await f.login();
+    assert.equal(logged.status, 200);
+    assert.match(logged.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+    const created = await f.request('POST', '/api/users', {
+      cookie: logged.cookie,
+      body: {
+        email: 'staff@example.test',
+        name: 'Staff',
+        role: 'staff',
+        password: 'unique-staff-test-password-12345',
+      },
+    });
+    assert.equal(created.status, 201);
+    const staff = await f.login('staff@example.test', 'unique-staff-test-password-12345');
+    assert.equal(staff.status, 200);
+    for (const route of ['/api/users', '/api/privacy', '/api/audit/verify'])
+      assert.equal((await f.request('GET', route, { cookie: staff.cookie })).status, 403);
+    assert.deepEqual(
+      (await f.request('GET', '/api/hosts')).body.map((h) => h.id),
+      ['reception'],
+    );
+    assert.equal(
+      (
+        await f.request('PATCH', `/api/users/${created.body.id}`, {
+          cookie: logged.cookie,
+          body: { status: 'suspended' },
+        })
+      ).status,
+      200,
+    );
+    assert.equal((await f.request('GET', '/api/session', { cookie: staff.cookie })).status, 401);
+    assert.equal(
+      (await f.request('POST', '/api/logout', { cookie: logged.cookie, body: {} })).status,
+      200,
+    );
+    assert.equal((await f.request('GET', '/api/session', { cookie: logged.cookie })).status, 401);
+    assert.equal((await f.request('POST', '/api/unknown', { body: {} })).status, 404);
+  } finally {
+    await f.close();
+  }
 });
 
-test('login normalization and durable account throttling',async()=>{
- const f=await fixture();let second;
- try{
-  for(let n=0;n<10;n++)assert.equal((await f.request('POST','/api/login',{body:{email:n%2?' ADMIN@EXAMPLE.TEST ':f.env.SECUREPASS_ADMIN_EMAIL,password:'wrong'}})).code,401);
-  assert.equal((await f.request('POST','/api/login',{body:{email:'\tadmin@example.test',password:f.env.SECUREPASS_ADMIN_PASSWORD}})).code,429);
-  f.db.close();second=await fixture(f.dir);
-  assert.equal((await second.request('POST','/api/login',{ip:'192.0.2.1',body:{email:'admin@example.test',password:f.env.SECUREPASS_ADMIN_PASSWORD}})).code,429);
- }finally{if(second)second.cleanup();else f.cleanup();}
+test('shared mode isolates customer AND site records, sessions, ownership, invitations and directory', async () => {
+  const sites = [
+    site('a-one', 'tenant-a', 'one'),
+    site('a-two', 'tenant-a', 'two'),
+    site('b-one', 'tenant-b', 'one'),
+  ];
+  const f = await fixture({ sites });
+  try {
+    assert.equal((await f.request('GET', '/api/config', { site: null })).status, 404);
+    const a = await f.login(),
+      b = await f.login(adminEmail, adminPassword, 'b-one');
+    assert.equal(
+      (await f.request('GET', '/api/data', { cookie: a.cookie, site: 'a-two' })).status,
+      401,
+    );
+    assert.equal(
+      (await f.request('GET', '/api/data', { cookie: a.cookie, site: 'b-one' })).status,
+      401,
+    );
+    const staff = await f.request('POST', '/api/users', {
+      cookie: a.cookie,
+      body: {
+        email: 'a-staff@example.test',
+        name: 'Same Display Name',
+        role: 'staff',
+        password: 'unique-staff-password-12345',
+      },
+    });
+    assert.equal(staff.status, 201);
+    assert.equal(
+      (await f.login('a-staff@example.test', 'unique-staff-password-12345', 'b-one')).status,
+      401,
+    );
+    const staffSession = await f.login('a-staff@example.test', 'unique-staff-password-12345');
+    const visitA = await f.checkin({ fullName: 'Tenant A Secret' }),
+      visitB = await f.checkin({ fullName: 'Tenant B Secret' }, 'b-one');
+    assert.equal(visitA.status, 201);
+    assert.equal(visitB.status, 201);
+    const dataA = (await f.request('GET', '/api/data', { cookie: a.cookie })).body;
+    assert.deepEqual(
+      dataA.visitors.map((v) => v.id),
+      [visitA.body.id],
+    );
+    assert.ok(!JSON.stringify(dataA).includes('Tenant B Secret'));
+    assert.equal(
+      (
+        await f.request('PATCH', `/api/visitors/${visitB.body.id}/checkout`, {
+          cookie: a.cookie,
+          body: {},
+        })
+      ).status,
+      404,
+    );
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Lagos',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const invite = {
+      guestName: 'Guest',
+      guestEmail: 'invited@example.test',
+      hostEmployeeId: staff.body.id,
+      expectedDate: today,
+      expectedTime: '12:00',
+    };
+    assert.equal(
+      (
+        await f.request('POST', '/api/invitations', {
+          cookie: staffSession.cookie,
+          body: { ...invite, hostEmployeeId: a.body.user.id },
+        })
+      ).status,
+      403,
+    );
+    assert.equal(
+      (
+        await f.request('POST', '/api/invitations', {
+          cookie: staffSession.cookie,
+          body: { ...invite, photoUrl: 'sensitive' },
+        })
+      ).status,
+      400,
+    );
+    const created = await f.request('POST', '/api/invitations', {
+      cookie: staffSession.cookie,
+      body: invite,
+    });
+    assert.equal(created.status, 201);
+    assert.equal(
+      (await f.request('GET', '/api/data', { cookie: staffSession.cookie })).body.invitations[0].id,
+      created.body.id,
+    );
+    assert.equal(
+      (
+        await f.request('POST', '/api/invitations/lookup', {
+          site: 'b-one',
+          body: { inviteCode: created.body.inviteCode },
+        })
+      ).status,
+      404,
+    );
+    const lookup = await f.request('POST', '/api/invitations/lookup', {
+      body: { inviteCode: created.body.inviteCode },
+    });
+    assert.equal(lookup.body.guestEmail, undefined);
+    assert.equal(lookup.body.publicHost.name, 'Invited host');
+    const redeemed = await f.checkin({
+      email: 'invited@example.test',
+      hostEmployeeId: staff.body.id,
+      inviteCode: created.body.inviteCode,
+    });
+    assert.equal(redeemed.status, 201);
+    assert.equal(redeemed.body.visitType, 'pre_registered');
+    assert.equal(
+      (
+        await f.checkin({
+          email: 'invited@example.test',
+          hostEmployeeId: staff.body.id,
+          inviteCode: created.body.inviteCode,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (await f.request('GET', '/api/data', { cookie: b.cookie, site: 'b-one' })).body.invitations
+        .length,
+      0,
+    );
+  } finally {
+    await f.close();
+  }
 });
 
-test('public issuance limits, capacity, indexed retention and bounded logs',async()=>{
- const f=await fixture();try{
-  const cookie=(await f.login()).headers['set-cookie'].split(';')[0];
-  const host=(await f.request('GET','/api/hosts')).body[0];
-  const body={fullName:'Visitor',email:'visitor@example.test',phone:'12345678',hostEmployeeId:host.id,generalConsentGranted:true,noticeVersion:'development-1'};
-  for(let n=0;n<10;n++)assert.equal((await f.request('POST','/api/checkin',{body})).code,201);
-  assert.equal((await f.request('POST','/api/checkin',{body})).code,429);
-  for(let n=0;n<25;n++)f.db.prepare('INSERT INTO audits VALUES (?,?,?,?,?,?)').run(crypto.randomUUID(),new Date().toISOString(),'test','TEST','','');
-  f.db.prepare('UPDATE record_expiry SET expires=?').run(Date.now()-1);f.purge();
-  assert.ok(f.db.prepare('SELECT COUNT(*) AS n FROM audits').get().n<=20);
-  assert.equal((await f.request('GET','/api/data',{cookie})).body.visitors.length,0);
-  const insert=f.db.prepare('INSERT INTO records VALUES (?,?,?)');
-  for(let n=0;n<100;n++)insert.run('invitations',String(n),JSON.stringify({id:String(n)}));
-  assert.equal((await f.request('POST','/api/checkin',{body,ip:'192.0.2.5'})).code,503);
-  assert.equal((await f.request('GET','/api/data',{cookie})).body.invitations.length,100);
-  assert.equal((await f.request('GET','/api/data?offset=-1',{cookie})).code,400);
- }finally{f.cleanup();}
+test('privileged MFA enrolls before access, rejects replay, consumes recovery codes and rotates passwords', async () => {
+  const f = await fixture({ env: { SECUREPASS_MFA_REQUIRED: 'admin' } });
+  try {
+    const login = await f.login();
+    assert.equal(login.body.user, undefined);
+    assert.equal(login.cookie, undefined);
+    assert.equal(login.body.enrollment, true);
+    assert.equal((await f.request('GET', '/api/users')).status, 401);
+    const otp = new OTPAuth.TOTP({ secret: login.body.secret }).generate();
+    const complete = await f.request('POST', '/api/mfa/complete', {
+      body: { challengeToken: login.body.challengeToken, code: otp },
+    });
+    assert.equal(complete.status, 200);
+    assert.equal(complete.body.recoveryCodes.length, 10);
+    assert.equal((await f.request('GET', '/api/users', { cookie: complete.cookie })).status, 200);
+    const factor = f.runtime.store.db.prepare('SELECT * FROM factors').get();
+    assert.ok(!factor.secret_cipher.includes(login.body.secret));
+    assert.ok(!factor.recovery_cipher.includes(complete.body.recoveryCodes[0]));
+    await f.request('POST', '/api/logout', { cookie: complete.cookie, body: {} });
+    const second = await f.login();
+    assert.equal(second.body.enrollment, false);
+    assert.equal(
+      (
+        await f.request('POST', '/api/mfa/complete', {
+          body: { challengeToken: second.body.challengeToken, code: otp },
+        })
+      ).status,
+      401,
+    );
+    const recovery = await f.request('POST', '/api/mfa/complete', {
+      body: { challengeToken: second.body.challengeToken, code: complete.body.recoveryCodes[0] },
+    });
+    assert.equal(recovery.status, 200);
+    const next = await f.login();
+    assert.equal(
+      (
+        await f.request('POST', '/api/mfa/complete', {
+          body: { challengeToken: next.body.challengeToken, code: complete.body.recoveryCodes[0] },
+        })
+      ).status,
+      401,
+    );
+    const rotated = await f.request('POST', '/api/account/password', {
+      cookie: recovery.cookie,
+      body: {
+        password: adminPassword,
+        newPassword: 'a-new-unique-admin-password-12345',
+        code: complete.body.recoveryCodes[1],
+      },
+    });
+    assert.equal(rotated.status, 200);
+    assert.equal((await f.request('GET', '/api/session', { cookie: recovery.cookie })).status, 401);
+    assert.equal((await f.login()).status, 401);
+    assert.equal(
+      (await f.login(adminEmail, 'a-new-unique-admin-password-12345')).body.mfaRequired,
+      true,
+    );
+  } finally {
+    await f.close();
+  }
 });
 
-test('CSV neutralizes formulas and escapes every value; QR excludes personal data',async()=>{
- const source=fs.readFileSync(new URL('src/utils/security.ts',root),'utf8');
- const mod=await import('data:text/javascript;base64,'+Buffer.from(stripTypeScriptTypes(source)).toString('base64'));
- for(const input of ['=1+1',' +SUM(A1:A2)','\t@SUM(1)','-1','\r=1'])assert.ok(mod.csvCell(input).startsWith('"\''));
- assert.equal(mod.csvCell('a"b\nc'),'"a""b\nc"');
- assert.equal(mod.badgeReference({badgeId:'opaque-id',fullName:'Private Name',email:'private@example.test'}),'SECUREPASS-REFERENCE:opaque-id');
+test('durable login throttle normalizes whitespace/case across restart and rejects expired sessions', async () => {
+  let f = await fixture();
+  const root = f.root;
+  try {
+    const login = await f.login();
+    f.runtime.store.db.prepare('UPDATE sessions SET expires_at=?').run(Date.now() - 1);
+    assert.equal((await f.request('GET', '/api/session', { cookie: login.cookie })).status, 401);
+    for (let n = 0; n < 9; n++)
+      assert.equal(
+        (await f.login(n % 2 ? ' ADMIN@EXAMPLE.TEST ' : adminEmail, 'wrong')).status,
+        401,
+      );
+    assert.equal((await f.login('\tadmin@example.test', adminPassword)).status, 429);
+    await f.close({ preserve: true });
+    f = await fixture({ root });
+    assert.equal((await f.login()).status, 429);
+  } finally {
+    await f.close();
+  }
+});
+
+test('public check-in uses one-use scoped proof, idempotency, duplicate detection and notice-version checks', async () => {
+  const f = await fixture();
+  try {
+    const body = f.visitorBody({ email: 'duplicate@example.test' });
+    assert.equal((await f.request('POST', '/api/checkin', { body })).status, 400);
+    const proof = await f.proof(),
+      valid = { ...body, proof };
+    assert.equal(
+      (await f.request('POST', '/api/checkin', { body: { ...valid, noticeVersion: 'old' } }))
+        .status,
+      400,
+    );
+    const saved = await f.request('POST', '/api/checkin', { body: valid });
+    assert.equal(saved.status, 201);
+    assert.equal((await f.request('POST', '/api/checkin', { body: valid })).body.id, saved.body.id);
+    assert.equal(
+      (await f.request('POST', '/api/checkin', { body: { ...valid, fullName: 'Changed' } })).status,
+      409,
+    );
+    assert.equal((await f.checkin({ email: body.email })).status, 409);
+    assert.equal(saved.body.hasBiometricPhoto, false);
+    assert.equal(saved.body.wifiAccessGranted, false);
+    assert.equal(saved.body.accessStatus, 'reception_only');
+    assert.ok(saved.body.noticeHash);
+    assert.ok(
+      !fs.readFileSync(path.join(f.data, 'securepass.sqlite')).includes(Buffer.from(body.email)),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('gate devices are site-bound; registration needs explicit approval; expiry and checkout revoke online access', async () => {
+  const token = 'test-only-device-token-12345678901234567890',
+    sites = [site('one'), site('two')];
+  const f = await fixture({
+    sites,
+    devices: [
+      { deviceId: 'gate-one', siteKey: 'one', tokenHashes: [digest(token)], enabled: true },
+    ],
+  });
+  try {
+    const admin = await f.login(),
+      visit = await f.checkin();
+    assert.equal(visit.status, 201);
+    assert.equal(visit.body.accessStatus, 'pending');
+    const gate = (siteKey = 'one') =>
+      f.request('POST', '/api/gate/verify', {
+        site: siteKey,
+        origin: null,
+        headers: { Authorization: `Bearer ${token}` },
+        body: { reference: `SECUREPASS-REFERENCE:${visit.body.badgeId}` },
+      });
+    assert.equal((await gate()).body.allowed, false);
+    assert.equal((await gate('two')).status, 401);
+    assert.equal(
+      (
+        await f.request('POST', `/api/visitors/${visit.body.id}/authorize`, {
+          cookie: admin.cookie,
+          body: {},
+        })
+      ).status,
+      200,
+    );
+    assert.equal((await gate()).body.allowed, true);
+    const scope = f.runtime.config.sites[0],
+      v = f.runtime.store.get(scope, 'visitors', visit.body.id);
+    v.accessExpiresAt = new Date(Date.now() - 1).toISOString();
+    f.runtime.store.put(scope, 'visitors', v);
+    assert.equal((await gate()).body.allowed, false);
+    await f.request('POST', `/api/visitors/${v.id}/authorize`, { cookie: admin.cookie, body: {} });
+    await f.request('PATCH', `/api/visitors/${v.id}/checkout`, { cookie: admin.cookie, body: {} });
+    assert.equal((await gate()).body.allowed, false);
+  } finally {
+    await f.close();
+  }
+});
+
+test('independent privacy approval, legal holds, signed erasure journal and backup restore prevent resurrection', async () => {
+  const f = await fixture();
+  try {
+    const admin = await f.login();
+    await f.request('POST', '/api/users', {
+      cookie: admin.cookie,
+      body: {
+        name: 'Independent Reviewer',
+        email: 'reviewer@example.test',
+        role: 'admin',
+        password: 'independent-reviewer-password-12345',
+      },
+    });
+    const reviewer = await f.login('reviewer@example.test', 'independent-reviewer-password-12345');
+    const visit = await f.checkin({ email: 'held@example.test', fullName: 'Private Subject' });
+    assert.equal(visit.status, 201);
+    const { store, config } = f.runtime;
+    const encrypted = snapshotDatabase(store.db, store.keys, store.journal, config);
+    assert.ok(!encrypted.includes('Private Subject'));
+    const held = await f.request('POST', '/api/privacy/holds', {
+      cookie: admin.cookie,
+      body: { visitorId: visit.body.id, caseReference: 'LEGAL-2026-1' },
+    });
+    assert.equal(held.status, 201);
+    const scope = config.sites[0],
+      v = store.get(scope, 'visitors', visit.body.id);
+    store.put(scope, 'visitors', v, Date.now() - 1);
+    store.purge();
+    assert.ok(store.get(scope, 'visitors', v.id));
+    const access = await f.request('POST', '/api/privacy/requests', {
+      cookie: admin.cookie,
+      body: { visitorId: v.id, type: 'access' },
+    });
+    assert.equal(
+      (
+        await f.request('GET', `/api/privacy/requests/${access.body.id}/export`, {
+          cookie: admin.cookie,
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await f.request('POST', `/api/privacy/requests/${access.body.id}/verify`, {
+          cookie: admin.cookie,
+          body: { verificationReference: 'CASE-1', verificationMethod: 'in_person' },
+        })
+      ).status,
+      409,
+    );
+    await f.request('POST', `/api/privacy/requests/${access.body.id}/verify`, {
+      cookie: reviewer.cookie,
+      body: { verificationReference: 'CASE-1', verificationMethod: 'in_person' },
+    });
+    const disclosure = await f.request('GET', `/api/privacy/requests/${access.body.id}/export`, {
+      cookie: admin.cookie,
+    });
+    assert.equal(disclosure.status, 200);
+    assert.equal(disclosure.body.visitors[0].id, v.id);
+    assert.ok(disclosure.body.notices.length);
+    const erasure = await f.request('POST', '/api/privacy/requests', {
+      cookie: admin.cookie,
+      body: { visitorId: v.id, type: 'erase' },
+    });
+    await f.request('POST', `/api/privacy/requests/${erasure.body.id}/verify`, {
+      cookie: reviewer.cookie,
+      body: { verificationReference: 'CASE-2', verificationMethod: 'verified_contact' },
+    });
+    assert.equal(
+      (
+        await f.request('POST', `/api/privacy/requests/${erasure.body.id}/fulfill`, {
+          cookie: admin.cookie,
+          body: {},
+        })
+      ).status,
+      409,
+    );
+    assert.equal(
+      (
+        await f.request('POST', `/api/privacy/holds/${held.body.id}/release`, {
+          cookie: admin.cookie,
+          body: { caseReference: 'LEGAL-RELEASE' },
+        })
+      ).status,
+      409,
+    );
+    await f.request('POST', `/api/privacy/holds/${held.body.id}/release`, {
+      cookie: reviewer.cookie,
+      body: { caseReference: 'LEGAL-RELEASE' },
+    });
+    const erased = await f.request('POST', `/api/privacy/requests/${erasure.body.id}/fulfill`, {
+      cookie: admin.cookie,
+      body: {},
+    });
+    assert.equal(erased.status, 200);
+    assert.ok(erased.body.receipt.signature);
+    assert.equal(store.get(scope, 'visitors', v.id), null);
+    const target = path.join(f.root, 'restored');
+    const result = restoreSnapshot(encrypted, {
+      keys: store.keys,
+      journal: store.journal,
+      config,
+      targetDirectory: target,
+    });
+    assert.equal(result.quarantined, true);
+    const restored = new DatabaseSync(path.join(target, 'securepass.sqlite'));
+    assert.equal(
+      restored.prepare("SELECT COUNT(*) AS n FROM secure_records WHERE kind='visitors'").get().n,
+      0,
+    );
+    assert.equal(restored.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
+    assert.equal(
+      restored.prepare("SELECT COUNT(*) AS n FROM memberships WHERE status='active'").get().n,
+      0,
+    );
+    restored.close();
+    fs.copyFileSync(
+      path.join(f.data, '.development-keys.json'),
+      path.join(target, '.development-keys.json'),
+    );
+    await assert.rejects(
+      () => createApplication({ ...f.env, SECUREPASS_DATA_DIR: target }),
+      /quarantined/,
+    );
+    const tampered = JSON.parse(encrypted);
+    tampered.data = tampered.data.slice(0, -4) + 'AAAA';
+    assert.throws(() => store.keys.unpackBackup(JSON.stringify(tampered)));
+  } finally {
+    await f.close();
+  }
+});
+
+test('encrypted record AAD blocks cross-site substitution; audit mutation and tail rollback are detected', async () => {
+  const f = await fixture({ sites: [site('one'), site('two')] });
+  try {
+    const a = await f.checkin({}, 'one'),
+      b = await f.checkin({}, 'two');
+    const { db, get } = f.runtime.store;
+    const cipher = db.prepare('SELECT cipher FROM secure_records WHERE id=?').get(a.body.id).cipher;
+    db.prepare('UPDATE secure_records SET cipher=? WHERE id=?').run(cipher, b.body.id);
+    assert.throws(() => get(f.runtime.config.sites[1], 'visitors', b.body.id));
+    assert.throws(
+      () => db.prepare("UPDATE audit_chain SET detail='tamper' WHERE seq=1").run(),
+      /append-only/,
+    );
+    db.exec('DROP TRIGGER audit_no_update');
+    db.prepare("UPDATE audit_chain SET detail='tamper' WHERE seq=1").run();
+    assert.throws(() => f.runtime.store.verifyAudit(), /integrity/);
+  } finally {
+    await f.close();
+  }
+});
+
+test('production rejects missing security controls and isolated databases refuse shared reuse', async () => {
+  assert.throws(
+    () =>
+      loadConfig({
+        NODE_ENV: 'production',
+        SECUREPASS_ORIGIN: 'https://facility.example',
+        SECUREPASS_MFA_REQUIRED: 'none',
+      }),
+    /privacy|MFA/,
+  );
+  let f = await fixture();
+  const root = f.root;
+  await f.close({ preserve: true });
+  try {
+    await assert.rejects(() => fixture({ root, sites: [site('one'), site('two')] }), /binding/);
+  } finally {
+    assert.ok(path.basename(root).startsWith('securepass-test-'));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('RFC 6238 known value and token counter replay protection', () => {
+  const secret = OTPAuth.Secret.fromUTF8('12345678901234567890'),
+    totp = new OTPAuth.TOTP({ secret, digits: 8 });
+  assert.equal(totp.generate({ timestamp: 59000 }), '94287082');
+  const six = new OTPAuth.TOTP({ secret, digits: 6 }).generate({ timestamp: 59000 });
+  assert.equal(verifyFactor(secret.base32, six, -1, 59000), 1);
+  assert.equal(verifyFactor(secret.base32, six, 1, 59000), null);
 });

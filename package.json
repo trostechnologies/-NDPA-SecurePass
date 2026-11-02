@@ -11,35 +11,38 @@
     "lint": "tsc --noEmit",
     "start": "node --env-file-if-exists=.env server.mjs",
     "dev:server": "node --env-file-if-exists=.env --watch server.mjs",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "playwright test",
+    "ops": "node --env-file-if-exists=.env ops/manage.mjs"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-react": "^6.1.1",
-    "docx": "^9.14.0",
-    "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "pdfkit": "^0.20.2",
-    "qrcode": "^1.5.4",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "vite": "^8.3.0"
+    "otpauth": "^9.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/pdfkit": "^0.17.7",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.21",
+    "docx": "^9.14.0",
     "esbuild": "^0.28.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "pdfkit": "^0.20.2",
+    "prettier": "^3.9.10",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
   },
   "engines": {
     "node": ">=22.13"

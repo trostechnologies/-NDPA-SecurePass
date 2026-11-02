@@ -8,14 +8,7 @@ import { AppUser } from '../types/visitor';
 import { LogIn, LogOut, User, ShieldCheck, Lock } from 'lucide-react';
 
 export type AppTab =
-  | 'kiosk'
-  | 'mobile'
-  | 'login'
-  | 'access_logs'
-  | 'compliance'
-  | 'invitations'
-  | 'muster'
-  | 'users';
+  'kiosk' | 'mobile' | 'login' | 'access_logs' | 'compliance' | 'invitations' | 'muster' | 'users';
 
 interface HeaderProps {
   activeTab: AppTab;

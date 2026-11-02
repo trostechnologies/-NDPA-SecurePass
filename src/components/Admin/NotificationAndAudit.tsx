@@ -5,17 +5,7 @@
 
 import React, { useState } from 'react';
 import { EmailNotification, NDPAAuditLog } from '../../types/visitor';
-import {
-  Mail,
-  FileText,
-  Send,
-  CheckCircle2,
-  Clock,
-  Shield,
-  Eye,
-  X,
-  Building,
-} from 'lucide-react';
+import { Mail, FileText, Send, CheckCircle2, Clock, Shield, Eye, X, Building } from 'lucide-react';
 
 interface NotificationAndAuditProps {
   notifications: EmailNotification[];
@@ -45,7 +35,8 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Mail className="w-3.5 h-3.5 text-emerald-400" /> Dispatched Notifications ({notifications.length})
+            <Mail className="w-3.5 h-3.5 text-emerald-400" /> Dispatched Notifications (
+            {notifications.length})
           </button>
           <button
             type="button"
@@ -56,7 +47,8 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Shield className="w-3.5 h-3.5 text-emerald-400" /> Operational Audit Log ({auditLogs.length})
+            <Shield className="w-3.5 h-3.5 text-emerald-400" /> Operational Audit Log (
+            {auditLogs.length})
           </button>
         </div>
 
@@ -103,7 +95,10 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
                 </div>
 
                 <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>To: <strong className="text-slate-300">{notif.recipientName}</strong> ({notif.recipientEmail})</span>
+                  <span>
+                    To: <strong className="text-slate-300">{notif.recipientName}</strong> (
+                    {notif.recipientEmail})
+                  </span>
                   <span className="flex items-center gap-1 text-emerald-400">
                     <CheckCircle2 className="w-3 h-3" /> {notif.status}
                   </span>
@@ -183,7 +178,9 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
               <div>
                 <span className="text-slate-500">To:</span>{' '}
                 <strong className="text-slate-200">{selectedEmail.recipientName}</strong>{' '}
-                <span className="text-slate-400 font-mono">&lt;{selectedEmail.recipientEmail}&gt;</span>
+                <span className="text-slate-400 font-mono">
+                  &lt;{selectedEmail.recipientEmail}&gt;
+                </span>
               </div>
               <div>
                 <span className="text-slate-500">Subject:</span>{' '}
@@ -200,8 +197,8 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 leading-relaxed space-y-3 font-sans">
               <p>{selectedEmail.bodyPreview}</p>
               <div className="pt-3 border-t border-slate-800/80 text-[11px] text-slate-500">
-                This automated transmission is delivered via SecurePass Enterprise in accordance with
-                Nigerian Data Protection Act (NDPA 2023) premises governance guidelines.
+                This automated transmission is delivered via SecurePass Enterprise in accordance
+                with Nigerian Data Protection Act (NDPA 2023) premises governance guidelines.
               </div>
             </div>
 

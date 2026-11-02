@@ -5,8 +5,10 @@
 
 export type VisitType = 'walk_in' | 'pre_registered' | 'contractor' | 'vip' | 'delivery';
 export type VisitorStatus = 'checked_in' | 'checked_out' | 'expected' | 'cancelled';
-export type SecurityClearance = 'Standard' | 'Escort Required' | 'Level 1 High Security' | 'Data Center Restricted';
-export type GovernmentIdType = 'NIN' | 'Voters Card' | 'Drivers License' | 'International Passport' | 'Corporate ID';
+export type SecurityClearance =
+  'Standard' | 'Escort Required' | 'Level 1 High Security' | 'Data Center Restricted';
+export type GovernmentIdType =
+  'NIN' | 'Voters Card' | 'Drivers License' | 'International Passport' | 'Corporate ID';
 
 export interface HostEmployee {
   userId?: string;
@@ -21,6 +23,10 @@ export interface HostEmployee {
 }
 
 export interface Visitor {
+  accessStatus?: 'pending' | 'authorized' | 'revoked' | 'reception_only';
+  accessExpiresAt?: string;
+  tenantId?: string;
+  siteId?: string;
   id: string;
   passCode: string;
   fullName: string;
@@ -38,7 +44,7 @@ export interface Visitor {
   hasBiometricPhoto: boolean;
   photoUrl?: string;
   biometricConsentGranted: boolean; // NDPA 2023 Section 30
-  generalConsentGranted: boolean;   // NDPA 2023 Section 25 & 26
+  generalConsentGranted: boolean; // NDPA 2023 Section 25 & 26
   consentTimestamp: string;
   noticeVersion?: string;
   vehiclePlate?: string;
@@ -95,7 +101,7 @@ export interface NDPAAuditLog {
   id: string;
   timestamp: string;
   actor: string;
-  action: 
+  action:
     | 'CHECK_IN'
     | 'CHECK_OUT'
     | 'PHOTO_CAPTURED'

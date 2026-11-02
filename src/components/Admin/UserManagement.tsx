@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { api, jsonBody } from '../../api';
 import { AppUser, UserRole } from '../../types/visitor';
 import {
   Users,
@@ -26,9 +27,9 @@ import {
 interface UserManagementProps {
   users: AppUser[];
   currentUser: AppUser | null;
-  onCreateUser: (newUser: AppUser) => void;
-  onUpdateUser: (updatedUser: AppUser) => void;
-  onDeleteUser: (userId: string) => void;
+  onCreateUser: (newUser: AppUser) => Promise<void>;
+  onUpdateUser: (updatedUser: AppUser) => Promise<void>;
+  onDeleteUser: (userId: string) => Promise<void>;
 }
 
 export const UserManagement: React.FC<UserManagementProps> = ({
@@ -38,6 +39,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   onUpdateUser,
   onDeleteUser,
 }) => {
+  const [busy, setBusy] = useState(false);
+  const [resetUser, setResetUser] = useState<AppUser | null>(null),
+    [resetReference, setResetReference] = useState(''),
+    [resetToken, setResetToken] = useState('');
+  const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [roleFilter, setRoleFilter] = useState<'all' | UserRole>('all');
 
@@ -91,7 +97,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
     setFormStatus(user.status);
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName || !formEmail) {
       alert('Please fill in user name and email.');
@@ -108,14 +114,23 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       title: formTitle.trim(),
       status: formStatus,
       createdAt: new Date().toISOString(),
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     };
 
-    onCreateUser(newUser);
-    setIsCreateOpen(false);
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onCreateUser(newUser);
+      setIsCreateOpen(false);
+      setFormPassword('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'User could not be created');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleEditSubmit = (e: React.FormEvent) => {
+  const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
 
@@ -129,19 +144,37 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       status: formStatus,
     };
 
-    onUpdateUser(updated);
-    setEditingUser(null);
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onUpdateUser(updated);
+      setEditingUser(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'User could not be updated');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deletingUserId) return;
     if (currentUser && currentUser.id === deletingUserId) {
       alert('Security Protection: You cannot delete your own active administrator profile.');
       setDeletingUserId(null);
       return;
     }
-    onDeleteUser(deletingUserId);
-    setDeletingUserId(null);
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onDeleteUser(deletingUserId);
+      setDeletingUserId(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Membership could not be removed');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -157,8 +190,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             Enterprise User Profile Management
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-xl">
-            Administer system administrators with full platform privileges, and staff members with access
-            restricted strictly to the Guest Invitations portal.
+            Administer system administrators with privileges for this site, and staff members with
+            access restricted strictly to the Guest Invitations portal.
           </p>
         </div>
 
@@ -251,19 +284,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   const isCurrent = currentUser?.id === user.id;
 
                   return (
-                    <tr
-                      key={user.id}
-                      className="hover:bg-slate-800/40 transition-colors group"
-                    >
+                    <tr key={user.id} className="hover:bg-slate-800/40 transition-colors group">
                       {/* Name & Avatar */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                            alt={user.name}
-                            className="w-8 h-8 rounded-full object-cover border border-slate-700"
-                            referrerPolicy="no-referrer"
-                          />
+                          <div
+                            aria-hidden="true"
+                            className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center"
+                          >
+                            {user.name.slice(0, 1)}
+                          </div>
                           <div>
                             <div className="font-bold text-slate-100 flex items-center gap-1.5">
                               <span>{user.name}</span>
@@ -273,9 +303,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-400 font-mono">
-                              {user.email}
-                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono">{user.email}</div>
                           </div>
                         </div>
                       </td>
@@ -298,9 +326,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                               <Lock className="w-3 h-3 text-sky-400" />
                               STAFF MEMBER
                             </span>
-                            <div className="text-[10px] text-slate-400">
-                              Guest Invitations Only
-                            </div>
+                            <div className="text-[10px] text-slate-400">Guest Invitations Only</div>
                           </div>
                         )}
                       </td>
@@ -353,6 +379,20 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
+                          <button
+                            type="button"
+                            disabled={isCurrent}
+                            title="Issue verified password reset"
+                            className="p-1.5 text-xs text-slate-400 disabled:opacity-40"
+                            onClick={() => {
+                              setResetUser(user);
+                              setResetReference('');
+                              setResetToken('');
+                              setError('');
+                            }}
+                          >
+                            Reset password
+                          </button>
 
                           <button
                             type="button"
@@ -363,7 +403,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                                 ? 'text-slate-600 cursor-not-allowed'
                                 : 'text-slate-400 hover:text-rose-400 hover:bg-slate-800'
                             }`}
-                            title={isCurrent ? 'Cannot delete your own account' : 'Delete User Profile'}
+                            title={
+                              isCurrent ? 'Cannot delete your own account' : 'Delete User Profile'
+                            }
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -397,6 +439,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             </div>
 
             <form onSubmit={handleCreateSubmit} className="space-y-3 text-xs">
+              {error && (
+                <p role="alert" className="text-red-300">
+                  {error}
+                </p>
+              )}
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Full Name *</label>
                 <input
@@ -410,11 +457,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">Corporate Email Address *</label>
+                <label className="block text-slate-300 font-medium mb-1">
+                  Corporate Email Address *
+                </label>
                 <input
                   type="email"
                   required
                   value={formEmail}
+                  readOnly={!!editingUser}
                   onChange={(e) => setFormEmail(e.target.value)}
                   placeholder="b.sanusi@zenithholdings.ng"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
@@ -517,6 +567,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={busy}
                   className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold rounded-xl shadow-sm"
                 >
                   Create User Profile
@@ -546,6 +597,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             </div>
 
             <form onSubmit={handleEditSubmit} className="space-y-3 text-xs">
+              {error && (
+                <p role="alert" className="text-red-300">
+                  {error}
+                </p>
+              )}
               <div>
                 <label className="block text-slate-300 font-medium mb-1">Full Name</label>
                 <input
@@ -563,6 +619,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   type="email"
                   required
                   value={formEmail}
+                  readOnly={!!editingUser}
                   onChange={(e) => setFormEmail(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-emerald-400"
                 />
@@ -623,7 +680,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                       <ShieldCheck className="w-3.5 h-3.5" /> Administrator
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      Full access across all areas.
+                      Administrative access within this site.
                     </p>
                   </div>
                 </div>
@@ -651,6 +708,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={busy}
                   className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold rounded-xl shadow-sm"
                 >
                   Save Profile Changes
@@ -671,7 +729,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             <div className="text-center space-y-1">
               <h3 className="text-sm font-bold text-slate-100">Delete User Profile?</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                This action will permanently revoke this user&apos;s authentication credentials and delete their profile.
+                This action will permanently revoke this user&apos;s authentication credentials and
+                delete their profile.
               </p>
             </div>
             <div className="flex items-center gap-2 pt-2">
@@ -691,6 +750,78 @@ export const UserManagement: React.FC<UserManagementProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {resetUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/90 p-8 flex justify-center items-center">
+          <section
+            role="dialog"
+            aria-label="Password reset delivery"
+            className="bg-slate-900 p-6 rounded-xl border border-slate-700 max-w-lg space-y-4"
+          >
+            <h2 className="text-lg font-bold">Verified password reset</h2>
+            <p className="text-sm">
+              Verify {resetUser.name}'s identity through the approved case process, then deliver the
+              token through a secure channel. Email is not sent by this application.
+            </p>
+            {resetToken ? (
+              <>
+                <p>
+                  This token expires in 15 minutes and works once. Old-password sign-in is paused
+                  until reset or expiry. Existing authenticator verification remains required.
+                </p>
+                <code className="block break-all select-all">{resetToken}</code>
+              </>
+            ) : (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (busy) return;
+                  setBusy(true);
+                  setError('');
+                  try {
+                    const result = await api<{ token: string }>(
+                      `/users/${resetUser.id}/password-reset`,
+                      { method: 'POST', body: jsonBody({ verificationReference: resetReference }) },
+                    );
+                    setResetToken(result.token);
+                  } catch (error) {
+                    setError(error instanceof Error ? error.message : 'Reset could not be issued');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <label className="block">
+                  Non-sensitive verified case reference
+                  <input
+                    required
+                    className="block w-full p-2 bg-slate-950 rounded"
+                    value={resetReference}
+                    onChange={(e) => setResetReference(e.target.value)}
+                  />
+                </label>
+                <button disabled={busy} className="p-2 bg-emerald-800 rounded">
+                  Issue one-use reset token
+                </button>
+              </form>
+            )}
+            {error && (
+              <p role="alert" className="text-red-300">
+                {error}
+              </p>
+            )}
+            <button
+              className="p-2 bg-slate-700 rounded"
+              onClick={() => {
+                setResetUser(null);
+                setResetToken('');
+              }}
+            >
+              Close secure delivery
+            </button>
+          </section>
         </div>
       )}
     </div>

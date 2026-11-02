@@ -12,3 +12,14 @@ securepass-data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+playwright-report/
+test-results/
+.private/
+securepass-backups/
+securepass-privacy-journal/
+securepass-audit-archives/
+**/.development-keys.json
+*.spbackup
+*.spbackup.manifest
+*.spaudit

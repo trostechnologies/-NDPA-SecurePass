@@ -7,10 +7,21 @@ import { csvCell } from './security';
 import { Visitor, NDPAAuditLog } from '../types/visitor';
 
 export const NDPA_ORGANIZATION_INFO = {
-  companyName:'Development controller',facilityName:'Development facility',address:'Not configured',
-  ndpcRegistrationNumber:'Not configured',dpoName:'Privacy contact',dpoEmail:'',dpoPhone:'',
-  dataRetentionDays:60,lawfulBasisNotice:'Refer to the controller-approved privacy notice',
-  noticeVersion:'development-1',privacyNoticeText:'Loading facility privacy notice',
+  companyName: 'Development controller',
+  facilityName: 'Development facility',
+  address: 'Not configured',
+  ndpcRegistrationNumber: 'Not configured',
+  dpoName: 'Privacy contact',
+  dpoEmail: '',
+  dpoPhone: '',
+  dataRetentionDays: 60,
+  lawfulBasisNotice: 'Refer to the controller-approved privacy notice',
+  gateEnabled: false,
+  siteKey: 'default',
+  tenantId: 'default',
+  siteId: 'default',
+  noticeVersion: 'development-1',
+  privacyNoticeText: 'Loading facility privacy notice',
 };
 
 export function generatePassCode(): string {
@@ -92,8 +103,26 @@ export function exportVisitorsCSV(visitors: Visitor[]): void {
     'Retention Expiry',
   ];
 
-  const rows = visitors.map(v => [v.passCode,v.fullName,v.email,v.phone,v.organization,v.hostEmployeeName,v.hostDepartment,v.purpose,v.visitType,v.checkInTime,v.checkOutTime||'Active',v.status,v.hasBiometricPhoto?'Yes':'No',v.generalConsentGranted?'Yes':'No',v.vehiclePlate||'',v.securityClearance,v.retentionExpiryDate]);
-  const csvContent=[headers,...rows].map(row=>row.map(csvCell).join(',')).join('\r\n');
+  const rows = visitors.map((v) => [
+    v.passCode,
+    v.fullName,
+    v.email,
+    v.phone,
+    v.organization,
+    v.hostEmployeeName,
+    v.hostDepartment,
+    v.purpose,
+    v.visitType,
+    v.checkInTime,
+    v.checkOutTime || 'Active',
+    v.status,
+    v.hasBiometricPhoto ? 'Yes' : 'No',
+    v.generalConsentGranted ? 'Yes' : 'No',
+    v.vehiclePlate || '',
+    v.securityClearance,
+    v.retentionExpiryDate,
+  ]);
+  const csvContent = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\r\n');
   const dateStr = new Date().toISOString().split('T')[0];
   downloadFile(csvContent, `NDPA_Visitor_Access_Log_${dateStr}.csv`, 'text/csv;charset=utf-8;');
 }
@@ -149,21 +178,27 @@ Operational data export for controller review. Identity verification and disclos
 ================================================================================
 `;
 
-  downloadFile(content.trim(), `NDPA_DSAR_${visitor.passCode}_${visitor.fullName.replace(/\s+/g, '_')}.txt`, 'text/plain');
+  downloadFile(
+    content.trim(),
+    `NDPA_DSAR_${visitor.passCode}_${visitor.fullName.replace(/\s+/g, '_')}.txt`,
+    'text/plain',
+  );
 }
 
 export function exportNDPCAuditSummary(visitors: Visitor[], auditLogs: NDPAAuditLog[]): void {
-  const activeCount = visitors.filter(v => v.status === 'checked_in').length;
-  const photoConsented = visitors.filter(v => v.biometricConsentGranted).length;
-  const photoDeclined = visitors.filter(v => !v.biometricConsentGranted && !v.isAnonymized).length;
+  const activeCount = visitors.filter((v) => v.status === 'checked_in').length;
+  const photoConsented = visitors.filter((v) => v.biometricConsentGranted).length;
+  const photoDeclined = visitors.filter(
+    (v) => !v.biometricConsentGranted && !v.isAnonymized,
+  ).length;
   const total = visitors.length;
   const consentPercentage = total > 0 ? Math.round((photoConsented / total) * 100) : 0;
-  const overduePrune = visitors.filter(v => isRetentionExpired(v.retentionExpiryDate)).length;
-  const anonymized = visitors.filter(v => v.isAnonymized).length;
+  const overduePrune = visitors.filter((v) => isRetentionExpired(v.retentionExpiryDate)).length;
+  const anonymized = visitors.filter((v) => v.isAnonymized).length;
 
   const content = `
 ================================================================================
-         NIGERIA DATA PROTECTION COMMISSION (NDPC) COMPLIANCE AUDIT
+         SECUREPASS OPERATIONAL PRIVACY SUMMARY
                VISITOR MANAGEMENT ACCESS & PRIVACY REPORT
 ================================================================================
 
@@ -174,25 +209,31 @@ NDPC Filing ID:      ${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
 Data Protection Off: ${NDPA_ORGANIZATION_INFO.dpoName}
 Reporting Timestamp: ${new Date().toISOString()}
 
-1. EXECUTIVE COMPLIANCE METRICS
+1. LOADED RECORD METRICS (PAGINATED VIEW)
 --------------------------------------------------------------------------------
 Total Processed Records:             ${total}
 Currently Active on Premises:        ${activeCount}
-Biometric Opt-in Rate (Sec 30):      ${consentPercentage}% (${photoConsented} consented, ${photoDeclined} exercised opt-out)
+Photo and ID collection:             Disabled
 Legacy records marked anonymized:     ${anonymized}
 Records Overdue for Retention Purge: ${overduePrune}
 Configured Retention Window:           ${NDPA_ORGANIZATION_INFO.dataRetentionDays} Days
 
 2. OPERATIONAL LIMITATIONS
 --------------------------------------------------------------------------------
-Primary records are deleted on expiry. Backups and exported copies require separate management.
-The application does not provide database encryption or immutable audit storage.
+Primary records are deleted on expiry unless held. Managed backups expire separately and replay erasures before restore. Exported copies require controller management.
+Sensitive record payloads use authenticated encryption. Audit chains detect tampering; independent immutable custody requires operator provisioning.
 Photo and government-ID collection are disabled pending an approved lifecycle.
 These metrics do not establish legal compliance or certification.
 
-3. RECENT OPERATIONAL AUDIT ENTRIES (LAST ${Math.min(auditLogs.length,10)})
+3. RECENT OPERATIONAL AUDIT ENTRIES (LAST ${Math.min(auditLogs.length, 10)})
 --------------------------------------------------------------------------------
-${auditLogs.slice(0, 10).map(log => `[${log.timestamp.slice(0, 19).replace('T', ' ')}] ${log.action.padEnd(20)} | Actor: ${log.actor.padEnd(30)} | Legal Basis: ${log.lawfulBasis}`).join('\n')}
+${auditLogs
+  .slice(0, 10)
+  .map(
+    (log) =>
+      `[${log.timestamp.slice(0, 19).replace('T', ' ')}] ${log.action.padEnd(20)} | Actor: ${log.actor.padEnd(30)} | Legal Basis: ${log.lawfulBasis}`,
+  )
+  .join('\n')}
 
 ================================================================================
 END OF OPERATIONAL SUMMARY — CONTROLLER REVIEW REQUIRED
@@ -200,5 +241,9 @@ END OF OPERATIONAL SUMMARY — CONTROLLER REVIEW REQUIRED
 `;
 
   const dateStr = new Date().toISOString().split('T')[0];
-  downloadFile(content.trim(), `NDPC_Audit_Compliance_Report_${dateStr}.txt`, 'text/plain');
+  downloadFile(
+    content.trim(),
+    `SecurePass_Operational_Privacy_Summary_${dateStr}.txt`,
+    'text/plain',
+  );
 }

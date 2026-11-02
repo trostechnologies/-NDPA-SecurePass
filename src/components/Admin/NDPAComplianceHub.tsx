@@ -9,7 +9,6 @@ import {
   NDPA_ORGANIZATION_INFO,
   isRetentionExpired,
   daysUntilExpiry,
-  exportDSARReport,
   exportNDPCAuditSummary,
 } from '../../utils/ndpaCompliance';
 import {
@@ -30,6 +29,7 @@ interface NDPAComplianceHubProps {
   auditLogs: NDPAAuditLog[];
   onExecuteRetentionPurge: () => void;
   onErasureRequest: (visitorId: string) => void;
+  onRequestAccess: (visitorId: string) => void;
 }
 
 export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
@@ -37,27 +37,30 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
   auditLogs,
   onExecuteRetentionPurge,
   onErasureRequest,
+  onRequestAccess,
 }) => {
   const [dsarSearch, setDsarSearch] = useState<string>('');
   const [selectedVisitorForDsar, setSelectedVisitorForDsar] = useState<Visitor | null>(null);
 
   // Compute metrics
   const totalVisitors = visitors.length;
-  const consentedVisitors = visitors.filter(v => v.generalConsentGranted).length;
-  const biometricConsented = visitors.filter(v => v.biometricConsentGranted).length;
-  const biometricOptOut = visitors.filter(v => !v.biometricConsentGranted && !v.isAnonymized).length;
-  const expiredRecords = visitors.filter(v => isRetentionExpired(v.retentionExpiryDate));
-  const anonymizedCount = visitors.filter(v => v.isAnonymized).length;
+  const consentedVisitors = visitors.filter((v) => v.generalConsentGranted).length;
+  const biometricConsented = visitors.filter((v) => v.biometricConsentGranted).length;
+  const biometricOptOut = visitors.filter(
+    (v) => !v.biometricConsentGranted && !v.isAnonymized,
+  ).length;
+  const expiredRecords = visitors.filter((v) => isRetentionExpired(v.retentionExpiryDate));
+  const anonymizedCount = visitors.filter((v) => v.isAnonymized).length;
 
   const biometricOptInPercentage =
     totalVisitors > 0 ? Math.round((biometricConsented / totalVisitors) * 100) : 0;
 
   const searchedVisitors = dsarSearch.trim()
     ? visitors.filter(
-        v =>
+        (v) =>
           v.fullName.toLowerCase().includes(dsarSearch.toLowerCase()) ||
           v.passCode.toLowerCase().includes(dsarSearch.toLowerCase()) ||
-          v.email.toLowerCase().includes(dsarSearch.toLowerCase())
+          v.email.toLowerCase().includes(dsarSearch.toLowerCase()),
       )
     : [];
 
@@ -72,20 +75,20 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
             </div>
             <div>
               <div className="text-xs font-mono font-bold text-emerald-400">
-                Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+                Controller registration (as configured):{' '}
+                {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
               </div>
               <h2 className="text-lg font-bold text-slate-100 tracking-tight mt-0.5">
-                Nigeria Data Protection Act (NDPA 2023) Compliance Center
+                Privacy Operations Center
               </h2>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Operational visitor retention and privacy tools. Controller review and independent backup management are required.
+                Operational visitor retention and privacy tools. Controller review and independent
+                backup management are required.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-
-
             <button
               type="button"
               onClick={() => exportNDPCAuditSummary(visitors, auditLogs)}
@@ -106,7 +109,9 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-100 tabular-nums">
-            {totalVisitors > 0 ? `${Math.round((consentedVisitors / totalVisitors) * 100)}%` : '100%'}
+            {totalVisitors > 0
+              ? `${Math.round((consentedVisitors / totalVisitors) * 100)}%`
+              : 'N/A'}
           </div>
           <div className="text-[11px] text-emerald-400/90 font-medium">
             Recorded notice acknowledgements
@@ -116,14 +121,12 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
         {/* KPI 2 */}
         <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Biometric Opt-In Ratio</span>
+            <span>Photo Collection</span>
             <Lock className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-100 tabular-nums">
-            {biometricOptInPercentage}%
-          </div>
+          <div className="text-2xl font-bold font-mono text-slate-100 tabular-nums">Disabled</div>
           <div className="text-[11px] text-slate-400 font-mono">
-            {biometricConsented} Opt-In · {biometricOptOut} Opt-Out (Sec 30)
+            Photo and ID collection are unavailable
           </div>
         </div>
 
@@ -144,14 +147,14 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
         {/* KPI 4 */}
         <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Right to Erasure (Sec 37)</span>
+            <span>Legacy Redaction Flags</span>
             <FileCheck className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-100 tabular-nums">
             {anonymizedCount}
           </div>
           <div className="text-[11px] text-slate-400 font-mono">
-            Cryptographically Redacted
+            Record flags; not proof of deletion
           </div>
         </div>
       </div>
@@ -162,11 +165,13 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
           <div>
             <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
               <Clock className="w-4 h-4 text-emerald-400" />
-              Automated Data Retention &amp; Storage Limitation (NDPA Sec 24(1)(d))
+              Configured Data Retention
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Personal data must not be kept longer than necessary. Records exceeding {NDPA_ORGANIZATION_INFO.dataRetentionDays} days
-              are scheduled for primary-database deletion. Backups and exports require separate management.
+              Personal data must not be kept longer than necessary. Records exceeding{' '}
+              {NDPA_ORGANIZATION_INFO.dataRetentionDays} days are scheduled for primary-database
+              deletion unless a legal hold applies. Managed backups expire separately; exports
+              require controller management.
             </p>
           </div>
 
@@ -203,9 +208,7 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
                     <td className="py-2.5 px-3 font-mono font-medium text-slate-300">
                       {v.passCode}
                     </td>
-                    <td className="py-2.5 px-3 font-medium text-slate-200">
-                      {v.fullName}
-                    </td>
+                    <td className="py-2.5 px-3 font-medium text-slate-200">{v.fullName}</td>
                     <td className="py-2.5 px-3 font-mono text-slate-400 tabular-nums">
                       {new Date(v.checkInTime).toLocaleDateString('en-GB')}
                     </td>
@@ -214,11 +217,15 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
                     </td>
                     <td className="py-2.5 px-3 font-mono text-[11px]">
                       {v.isAnonymized ? (
-                        <span className="text-slate-500">Redacted per Sec 37</span>
+                        <span className="text-slate-500">Legacy redaction flag</span>
                       ) : expired ? (
-                        <span className="text-rose-400 font-bold">EXPIRED ({Math.abs(daysLeft)}d overdue)</span>
+                        <span className="text-rose-400 font-bold">
+                          EXPIRED ({Math.abs(daysLeft)}d overdue)
+                        </span>
                       ) : (
-                        <span className="text-emerald-400 font-medium">Active ({daysLeft}d remaining)</span>
+                        <span className="text-emerald-400 font-medium">
+                          Active ({daysLeft}d remaining)
+                        </span>
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-right">
@@ -228,7 +235,7 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
                           onClick={() => onErasureRequest(v.id)}
                           className="px-2 py-1 text-[11px] font-medium text-amber-300 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-800 rounded"
                         >
-                          Anonymize
+                          Request erasure
                         </button>
                       )}
                     </td>
@@ -245,11 +252,12 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
         <div>
           <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
             <FileCheck className="w-4 h-4 text-emerald-400" />
-            Data Subject Rights Desk (NDPA 2023 Sections 34 &amp; 37)
+            Data Subject Request Desk
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Handle official Data Subject Access Requests (DSAR). Search a visitor to generate an operational
-            statutory data disclosure dossier or execute their Right to Erasure.
+            Handle official Data Subject Access Requests (DSAR). Search a visitor to generate an
+            verified disclosure request or erasure request. A different administrator must approve
+            identity verification.
           </p>
         </div>
 
@@ -295,16 +303,16 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => exportDSARReport(v)}
+                      onClick={() => onRequestAccess(v.id)}
                       className="px-3 py-1.5 text-xs font-medium text-emerald-300 bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-800 rounded-lg flex items-center gap-1.5 transition-colors"
                     >
-                      <Download className="w-3.5 h-3.5" /> Export DSAR Dossier
+                      <Download className="w-3.5 h-3.5" /> Request verified disclosure
                     </button>
                     {!v.isAnonymized && (
                       <button
                         type="button"
                         onClick={() => {
-                          if (confirm(`Execute Right to Erasure for ${v.fullName}?`)) {
+                          if (confirm(`Request verified erasure for ${v.fullName}?`)) {
                             onErasureRequest(v.id);
                           }
                         }}
@@ -326,11 +334,10 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
         <div className="flex items-start gap-3">
           <Building className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
           <div>
-            <div className="font-semibold text-slate-200">
-              Appointed Data Protection Officer (DPO)
-            </div>
+            <div className="font-semibold text-slate-200">Configured Privacy Contact</div>
             <p className="text-slate-400 mt-0.5">
-              {NDPA_ORGANIZATION_INFO.dpoName} · {NDPA_ORGANIZATION_INFO.dpoEmail} · Tel: {NDPA_ORGANIZATION_INFO.dpoPhone}
+              {NDPA_ORGANIZATION_INFO.dpoName} · {NDPA_ORGANIZATION_INFO.dpoEmail} · Tel:{' '}
+              {NDPA_ORGANIZATION_INFO.dpoPhone}
             </p>
             <p className="text-[11px] text-slate-500 mt-0.5">
               Supervising Authority: Nigeria Data Protection Commission (NDPC), Headquarters, Abuja.
@@ -338,7 +345,7 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
           </div>
         </div>
         <div className="text-right text-[11px] text-slate-500 font-mono">
-          Last Internal Privacy Audit: 2026-10-14 · Pass
+          Independent audit status is not recorded here
         </div>
       </div>
     </div>

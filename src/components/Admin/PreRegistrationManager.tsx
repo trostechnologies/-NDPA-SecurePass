@@ -33,9 +33,9 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
   onCreateInvite,
   onQuickCheckIn,
 }) => {
-  const submitting=useRef(false);
-  const [busy,setBusy]=useState(false);
-  const [error,setError]=useState('');
+  const submitting = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -50,7 +50,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
   const [purpose, setPurpose] = useState<string>('Executive Strategic Consultation');
   const [parkingReserved, setParkingReserved] = useState<boolean>(true);
   const [specialInstructions, setSpecialInstructions] = useState<string>(
-    'Please present this invitation at the Ground Floor security reception turnstiles.'
+    'Please present this invitation at the Ground Floor security reception turnstiles.',
   );
 
   // Selected invite preview
@@ -70,12 +70,8 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
         JSON.stringify({
           type: 'INVITE',
           code: inv.inviteCode,
-          name: inv.guestName,
-          host: inv.hostEmployeeName,
-          date: inv.expectedDate,
-          time: inv.expectedTime,
         }),
-        { width: 140, margin: 1 }
+        { width: 140, margin: 1 },
       );
       setPreviewQr(qr);
     } catch (err) {
@@ -90,46 +86,60 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
       return;
     }
 
-    const host = hosts.find(h => h.id === hostId) || hosts[0];
-    if(!host){setError('No host is configured for your account. Contact an administrator.');return;}
-    if(submitting.current)return;submitting.current=true;setBusy(true);setError('');
+    const host = hosts.find((h) => h.id === hostId) || hosts[0];
+    if (!host) {
+      setError('No host is configured for your account. Contact an administrator.');
+      return;
+    }
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError('');
     try {
-    const newCode = `INV-${Math.floor(1000 + Math.random() * 9000)}`;
+      const newCode = `INV-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    const newInvite: PreRegistrationInvite = {
-      id: `INV-2026-${Math.floor(200 + Math.random() * 800)}`,
-      inviteCode: newCode,
-      guestName: guestName.trim(),
-      guestEmail: guestEmail.trim(),
-      guestPhone: guestPhone.trim() || '+234 800 000 0000',
-      guestOrganization: guestOrg.trim() || 'Guest Organization',
-      hostEmployeeId: host.id,
-      hostEmployeeName: host.name,
-      hostDepartment: host.department,
-      expectedDate,
-      expectedTime,
-      purpose,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      specialInstructions,
-      parkingReserved,
-    };
+      const newInvite: PreRegistrationInvite = {
+        id: `INV-2026-${Math.floor(200 + Math.random() * 800)}`,
+        inviteCode: newCode,
+        guestName: guestName.trim(),
+        guestEmail: guestEmail.trim(),
+        guestPhone: guestPhone.trim() || '+234 800 000 0000',
+        guestOrganization: guestOrg.trim() || 'Guest Organization',
+        hostEmployeeId: host.id,
+        hostEmployeeName: host.name,
+        hostDepartment: host.department,
+        expectedDate,
+        expectedTime,
+        purpose,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        specialInstructions,
+        parkingReserved,
+      };
 
-    await onCreateInvite(newInvite);
-    setIsModalOpen(false);
+      await onCreateInvite(newInvite);
+      setIsModalOpen(false);
 
-    // Reset Form
-    setGuestName('');
-    setGuestEmail('');
-    setGuestPhone('');
-    setGuestOrg('');
-    }catch(e){setError(e instanceof Error?e.message:'Invitation could not be saved');}
-    finally{submitting.current=false;setBusy(false);}
+      // Reset Form
+      setGuestName('');
+      setGuestEmail('');
+      setGuestPhone('');
+      setGuestOrg('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invitation could not be saved');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {error&&<p role="alert" className="text-red-300">{error}</p>}
+      {error && (
+        <p role="alert" className="text-red-300">
+          {error}
+        </p>
+      )}
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg">
         <div>
@@ -141,7 +151,8 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
             Invite-Only Pre-Registration Hub
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-xl">
-            Save guest invitations for reception. Share the generated code manually; email delivery is not configured.
+            Save guest invitations for reception. Share the generated code manually; email delivery
+            is not configured.
           </p>
         </div>
 
@@ -284,9 +295,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
             <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Guest Full Name *
-                  </label>
+                  <label className="block text-slate-300 font-medium mb-1">Guest Full Name *</label>
                   <input
                     type="text"
                     required
@@ -297,9 +306,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Guest Email *
-                  </label>
+                  <label className="block text-slate-300 font-medium mb-1">Guest Email *</label>
                   <input
                     type="email"
                     required
@@ -310,9 +317,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Guest Phone
-                  </label>
+                  <label className="block text-slate-300 font-medium mb-1">Guest Phone</label>
                   <input
                     type="tel"
                     value={guestPhone}
@@ -322,9 +327,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Organization
-                  </label>
+                  <label className="block text-slate-300 font-medium mb-1">Organization</label>
                   <input
                     type="text"
                     value={guestOrg}
@@ -336,15 +339,13 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">
-                  Host Staff Member *
-                </label>
+                <label className="block text-slate-300 font-medium mb-1">Host Staff Member *</label>
                 <select
                   value={hostId}
                   onChange={(e) => setHostId(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-200 focus:outline-none focus:border-emerald-400"
                 >
-                  {hosts.map(h => (
+                  {hosts.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.name} ({h.department} · {h.floor})
                     </option>
@@ -354,9 +355,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Expected Date
-                  </label>
+                  <label className="block text-slate-300 font-medium mb-1">Expected Date</label>
                   <input
                     type="date"
                     value={expectedDate}
@@ -365,9 +364,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-medium mb-1">
-                    Expected Time
-                  </label>
+                  <label className="block text-slate-300 font-medium mb-1">Expected Time</label>
                   <input
                     type="time"
                     value={expectedTime}
@@ -378,9 +375,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 font-medium mb-1">
-                  Purpose of Visit
-                </label>
+                <label className="block text-slate-300 font-medium mb-1">Purpose of Visit</label>
                 <input
                   type="text"
                   value={purpose}
@@ -442,7 +437,11 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
 
             <div className="flex flex-col items-center justify-center p-3 bg-slate-50 rounded-xl border border-slate-200">
               {previewQr && (
-                <img src={previewQr} alt="Invite QR" className="w-32 h-32 rounded border border-slate-200" />
+                <img
+                  src={previewQr}
+                  alt="Invite QR"
+                  className="w-32 h-32 rounded border border-slate-200"
+                />
               )}
               <div className="mt-2 text-center">
                 <span className="text-[10px] text-slate-400 block font-mono">INVITE CODE:</span>
