@@ -19,3 +19,5 @@ npm audit --omit=dev --audit-level=high
 The browser test uses isolated headless Edge on Windows or Playwright Chromium on Linux (`npx playwright install --with-deps chromium`).
 
 Read [the re-audit implementation report](REAUDIT_IMPLEMENTATION.md) for coverage and remaining deployment acceptance work. Photo/ID collection and SSO are not available. A visitor QR requires online site-device verification and explicit authorization when gate access is enabled. This software does not certify legal compliance or the security of a deployment.
+
+The follow-up [database audit](DATABASE_AUDIT.md) documents restore/retention fixes, backup format compatibility and the planned VPS deployment boundary.

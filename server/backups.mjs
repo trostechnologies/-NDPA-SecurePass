@@ -7,13 +7,18 @@ import {
   statSync,
   unlinkSync,
   readdirSync,
+  openSync,
+  closeSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { loadConfig } from './config.mjs';
-import { loadKeys, equal } from './crypto.mjs';
+import { loadKeys, equal, digest } from './crypto.mjs';
 import { openJournal, replayGovernance } from './journal.mjs';
 
+const MAX_BACKUP_BYTES = 256 * 1024 * 1024;
+const expiryFor = (config, createdAt) =>
+  createdAt + Math.min(...config.sites.map((s) => s.backupRetentionDays)) * 86400000;
 const ephemeral = [
   'sessions',
   'auth_challenges',
@@ -56,8 +61,9 @@ export function snapshotDatabase(db, keys, journal, config) {
         mac: '0'.repeat(64),
       };
     snapshot = {
-      version: 1,
+      version: 2,
       createdAt: new Date().toISOString(),
+      expiresAt: expiryFor(config, Date.now()),
       scopes: config.sites.map((s) => s.scopeId).sort(),
       binding: config.mode === 'isolated' ? `isolated:${config.sites[0].scopeId}` : 'shared',
       journalHead: journalState.head,
@@ -76,10 +82,22 @@ export function restoreSnapshot(encrypted, { keys, journal, config, targetDirect
   const snapshot = keys.unpackBackup(encrypted),
     state = journal.read();
   if (
-    snapshot.version !== 1 ||
+    snapshot.version !== 2 ||
     JSON.stringify(snapshot.scopes) !== JSON.stringify(config.sites.map((s) => s.scopeId).sort())
   )
-    throw Error('Snapshot version or customer/site registry does not match');
+    throw Error(
+      'Snapshot version or customer/site registry does not match; legacy snapshots require reviewed recovery',
+    );
+  const createdAt = Date.parse(snapshot.createdAt);
+  if (
+    !Number.isFinite(createdAt) ||
+    createdAt > Date.now() + 300000 ||
+    !Number.isSafeInteger(snapshot.expiresAt) ||
+    snapshot.expiresAt <= createdAt ||
+    snapshot.expiresAt > expiryFor(config, createdAt) + 1000 ||
+    snapshot.expiresAt <= Date.now()
+  )
+    throw Error('Snapshot expired or retention metadata is invalid');
   const expected = config.mode === 'isolated' ? `isolated:${config.sites[0].scopeId}` : 'shared';
   if (snapshot.binding !== expected) throw Error('Snapshot deployment binding mismatch');
   if (
@@ -91,12 +109,16 @@ export function restoreSnapshot(encrypted, { keys, journal, config, targetDirect
     throw Error('A current authoritative erasure journal is required');
   const dir = path.resolve(targetDirectory),
     file = path.join(dir, 'securepass.sqlite');
-  if (existsSync(file) || existsSync(path.join(dir, 'server.lock')))
+  if (existsSync(dir) && readdirSync(dir).length)
     throw Error('Restore target must be an unused data directory');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const db = new DatabaseSync(file);
-  let completed = false;
+  // Reserve exclusively before SQLite opens the file; never race into another database.
+  const reservation = openSync(file, 'wx', 0o600);
+  closeSync(reservation);
+  let db,
+    completed = false;
   try {
+    db = new DatabaseSync(file);
     db.exec('PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE;');
     for (const s of snapshot.schemas.filter((s) => s.type === 'table')) {
       identifier(s.name);
@@ -139,7 +161,7 @@ export function restoreSnapshot(encrypted, { keys, journal, config, targetDirect
     completed = true;
     return { quarantined: true, recordsReplayed: state.entries.length, sessionCount: 0 };
   } finally {
-    db.close();
+    db?.close();
     if (!completed)
       for (const suffix of ['', '-wal', '-shm'])
         if (existsSync(file + suffix)) unlinkSync(file + suffix);
@@ -161,19 +183,22 @@ export function writeManagedBackup(environment) {
     mkdirSync(folder, { recursive: true, mode: 0o700 });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-'),
       file = path.join(folder, `securepass-${stamp}-${randomBytes(4).toString('hex')}.spbackup`);
-    writeFileSync(file, encrypted, { mode: 0o600, flag: 'wx' });
-    const expiresAt =
-      Date.now() + Math.min(...config.sites.map((s) => s.backupRetentionDays)) * 86400000;
+    if (Buffer.byteLength(encrypted) > MAX_BACKUP_BYTES)
+      throw Error('Snapshot exceeds restore size limit');
+    writeFileSync(file, encrypted, { mode: 0o600, flag: 'wx', flush: true });
+    const snapshot = keys.unpackBackup(encrypted),
+      expiresAt = snapshot.expiresAt;
     const body = {
-      version: 1,
+      version: 2,
       file: path.basename(file),
-      createdAt: new Date().toISOString(),
+      sha256: digest(encrypted),
+      createdAt: snapshot.createdAt,
       expiresAt,
     };
     writeFileSync(
       file + '.manifest',
       JSON.stringify({ ...body, signature: keys.sign('backup-manifest:' + JSON.stringify(body)) }),
-      { mode: 0o600, flag: 'wx' },
+      { mode: 0o600, flag: 'wx', flush: true },
     );
     return { file, expiresAt: new Date(expiresAt).toISOString() };
   } finally {
@@ -181,7 +206,7 @@ export function writeManagedBackup(environment) {
   }
 }
 export function restoreManagedBackup(environment, file, targetDirectory) {
-  if (statSync(file).size > 256 * 1024 * 1024) throw Error('Snapshot exceeds restore size limit');
+  if (statSync(file).size > MAX_BACKUP_BYTES) throw Error('Snapshot exceeds restore size limit');
   const config = loadConfig(environment),
     source = path.resolve(config.env.SECUREPASS_DATA_DIR || './securepass-data'),
     keys = loadKeys(config.env, source, config.production),
@@ -190,7 +215,26 @@ export function restoreManagedBackup(environment, file, targetDirectory) {
       config.env.SECUREPASS_JOURNAL_DIR || path.join(source, 'privacy-journal'),
       { create: false },
     );
-  return restoreSnapshot(readFileSync(file, 'utf8'), { keys, journal, config, targetDirectory });
+  const encrypted = readFileSync(file, 'utf8');
+  const manifest = JSON.parse(readFileSync(file + '.manifest', 'utf8'));
+  const body = verifyManifest(manifest, keys, path.basename(file));
+  if (body.version !== 2 || body.sha256 !== digest(encrypted))
+    throw Error('Backup content does not match its authenticated manifest');
+  const snapshot = keys.unpackBackup(encrypted);
+  if (body.expiresAt !== snapshot.expiresAt || body.createdAt !== snapshot.createdAt)
+    throw Error('Backup retention metadata mismatch');
+  return restoreSnapshot(encrypted, { keys, journal, config, targetDirectory });
+}
+function verifyManifest(manifest, keys, file) {
+  const { signature, ...body } = manifest;
+  if (
+    !equal(signature, keys.sign('backup-manifest:' + JSON.stringify(body))) ||
+    body.file !== file ||
+    !/^securepass-[\w-]+\.spbackup$/.test(body.file) ||
+    !Number.isSafeInteger(body.expiresAt)
+  )
+    throw Error('Managed backup manifest integrity failed');
+  return body;
 }
 export function pruneManagedBackups(environment, timestamp = Date.now()) {
   const config = loadConfig(environment),
@@ -199,23 +243,47 @@ export function pruneManagedBackups(environment, timestamp = Date.now()) {
     folder = path.resolve(config.env.SECUREPASS_BACKUP_DIR || path.join(dir, 'managed-backups'));
   if (!existsSync(folder)) return { removed: 0 };
   let removed = 0;
-  for (const name of readdirSync(folder).filter((n) => n.endsWith('.spbackup.manifest'))) {
-    const manifest = JSON.parse(readFileSync(path.join(folder, name), 'utf8')),
-      { signature, ...body } = manifest;
-    if (
-      !equal(signature, keys.sign('backup-manifest:' + JSON.stringify(body))) ||
-      body.file !== name.slice(0, -9) ||
-      !/^securepass-[\w-]+\.spbackup$/.test(body.file) ||
-      !Number.isSafeInteger(body.expiresAt)
-    )
-      throw Error('Managed backup manifest integrity failed');
-    if (body.expiresAt <= timestamp) {
-      const target = path.resolve(folder, body.file);
+  const failures = [];
+  const names = readdirSync(folder);
+  const candidates = new Set(
+    names
+      .filter((n) => /^securepass-[\w-]+\.spbackup(?:\.manifest)?$/.test(n))
+      .map((n) => n.replace(/\.manifest$/, '')),
+  );
+  for (const name of candidates) {
+    try {
+      const target = path.resolve(folder, name),
+        manifestFile = target + '.manifest';
       if (path.dirname(target) !== folder) throw Error('Backup target escapes managed directory');
-      if (existsSync(target)) unlinkSync(target);
-      unlinkSync(path.join(folder, name));
-      removed++;
+      let expiresAt;
+      if (existsSync(manifestFile)) {
+        expiresAt = verifyManifest(
+          JSON.parse(readFileSync(manifestFile, 'utf8')),
+          keys,
+          name,
+        ).expiresAt;
+      } else {
+        // A crash between durable snapshot and manifest publication must not bypass expiry.
+        if (statSync(target).size > MAX_BACKUP_BYTES)
+          throw Error('Orphan snapshot exceeds restore size limit');
+        const snapshot = keys.unpackBackup(readFileSync(target, 'utf8'));
+        if (snapshot.version !== 2 || !Number.isSafeInteger(snapshot.expiresAt))
+          throw Error('Orphan snapshot retention metadata invalid');
+        expiresAt = snapshot.expiresAt;
+      }
+      if (expiresAt <= timestamp) {
+        if (existsSync(target)) unlinkSync(target);
+        if (existsSync(manifestFile)) unlinkSync(manifestFile);
+        removed++;
+      }
+    } catch (error) {
+      failures.push(error);
     }
   }
+  if (failures.length)
+    throw new AggregateError(
+      failures,
+      'Managed backup integrity/cleanup failed; unaffected expired files were processed',
+    );
   return { removed };
 }

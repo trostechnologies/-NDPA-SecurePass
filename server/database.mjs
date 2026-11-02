@@ -47,7 +47,7 @@ export function openDatabase(config) {
       closed = false,
       exportedSequence = -1;
     const scoped = (s) => [s.tenantId, s.siteId];
-    db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA busy_timeout=5000;
+    db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; PRAGMA busy_timeout=5000;
   CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS installation(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS notice_versions(tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,version TEXT NOT NULL,hash TEXT NOT NULL,cipher TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(tenant_id,site_id,version));

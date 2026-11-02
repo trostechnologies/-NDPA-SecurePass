@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { readFileSync } from 'node:fs';
 
 export function loadConfig(input) {
@@ -104,6 +105,29 @@ export function loadConfig(input) {
     throw Error(
       'Production requires a separate journal volume, managed backup directory and reviewed backup policy',
     );
+  if (production) {
+    const directories = [
+      env.SECUREPASS_DATA_DIR || './securepass-data',
+      env.SECUREPASS_JOURNAL_DIR,
+      env.SECUREPASS_BACKUP_DIR,
+    ].map((value) => path.resolve(value));
+    for (let i = 0; i < directories.length; i++)
+      for (let j = i + 1; j < directories.length; j++) {
+        const overlaps = (parent, child) => {
+          const relative = path.relative(parent, child);
+          return (
+            relative === '' ||
+            (relative !== '..' &&
+              !relative.startsWith('..' + path.sep) &&
+              !path.isAbsolute(relative))
+          );
+        };
+        if (overlaps(directories[i], directories[j]) || overlaps(directories[j], directories[i]))
+          throw Error(
+            'Production data, journal and backup directories must be separate, non-nested paths',
+          );
+      }
+  }
   return {
     env,
     production,

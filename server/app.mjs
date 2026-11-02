@@ -122,8 +122,10 @@ export async function createApplication(environment = process.env, { maintenance
     app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
     app.get('/api/ready', (_req, res) => {
       try {
-        db.prepare('SELECT 1').get();
-        res.status(integrityHealthy ? 200 : 503).json({ ready: integrityHealthy });
+        const auditCapacityAvailable =
+          db.prepare('SELECT COUNT(*) AS n FROM audit_chain').get().n < config.maxAudits;
+        const ready = integrityHealthy && auditCapacityAvailable;
+        res.status(ready ? 200 : 503).json({ ready });
       } catch {
         res.status(503).json({ ready: false });
       }
@@ -363,12 +365,10 @@ export async function createApplication(environment = process.env, { maintenance
           res.status(201).json(safeUser(member(req.scope, id)));
         } catch (error) {
           if (String(error).includes('UNIQUE'))
-            return res
-              .status(409)
-              .json({
-                error:
-                  'Account cannot be created; ask the operator about existing-identity membership',
-              });
+            return res.status(409).json({
+              error:
+                'Account cannot be created; ask the operator about existing-identity membership',
+            });
           throw error;
         }
       }),
@@ -898,19 +898,17 @@ export async function createApplication(environment = process.env, { maintenance
           code: error.code || error.type || 'internal',
         }),
       );
-      res
-        .status(status)
-        .json({
-          error:
-            status === 500
-              ? 'Server error'
-              : status === 413
-                ? 'Request too large'
-                : status === 400
-                  ? 'Invalid request'
-                  : error.message,
-          requestId: req.requestId,
-        });
+      res.status(status).json({
+        error:
+          status === 500
+            ? 'Server error'
+            : status === 413
+              ? 'Request too large'
+              : status === 400
+                ? 'Invalid request'
+                : error.message,
+        requestId: req.requestId,
+      });
     });
     let timer;
     if (!maintenance) {

@@ -12,7 +12,14 @@ import { stripTypeScriptTypes } from 'node:module';
 import * as OTPAuth from 'otpauth';
 import { fixture, site, adminPassword } from './helpers.mjs';
 import { hashPassword } from '../server/auth.mjs';
-import { writeManagedBackup, pruneManagedBackups } from '../server/backups.mjs';
+import {
+  writeManagedBackup,
+  pruneManagedBackups,
+  restoreManagedBackup,
+} from '../server/backups.mjs';
+import { digest } from '../server/crypto.mjs';
+import { loadConfig } from '../server/config.mjs';
+import { runBackupCycle } from '../ops/backup-cycle.mjs';
 import {
   prepareAuditArchive,
   commitAuditArchive,
@@ -190,6 +197,7 @@ test('audit storage fails closed at capacity and only compacts a verified, exter
         .n,
       0,
     );
+    assert.equal((await f.request('GET', '/api/ready')).status, 503);
     const prepared = prepareAuditArchive(store, config, { keep: 1 });
     assert.equal(
       verifyAuditArchive(fs.readFileSync(prepared.file, 'utf8'), store.keys).seq,
@@ -342,4 +350,156 @@ test('CSV formula and quote escaping remains effective and all visitor QR conten
     mod.badgeReference({ badgeId: 'opaque', fullName: 'Private Name' }),
     'SECUREPASS-REFERENCE:opaque',
   );
+});
+
+test('managed restore rejects swapped snapshots, expired content and legacy retention bypasses', async () => {
+  const f = await fixture();
+  try {
+    const { keys, db } = f.runtime.store;
+    assert.equal(db.prepare('PRAGMA synchronous').get().synchronous, 2);
+    const first = writeManagedBackup(f.env),
+      second = writeManagedBackup(f.env);
+    const original = fs.readFileSync(first.file, 'utf8');
+    fs.writeFileSync(first.file, fs.readFileSync(second.file));
+    assert.throws(
+      () => restoreManagedBackup(f.env, first.file, path.join(f.root, 'swapped')),
+      /manifest/,
+    );
+    assert.ok(!fs.existsSync(path.join(f.root, 'swapped', 'securepass.sqlite')));
+    fs.writeFileSync(first.file, original);
+    assert.equal(
+      restoreManagedBackup(f.env, first.file, path.join(f.root, 'valid')).quarantined,
+      true,
+    );
+    const snapshot = keys.unpackBackup(original);
+    snapshot.createdAt = new Date(Date.now() - 86400000).toISOString();
+    snapshot.expiresAt = Date.now() - 1;
+    const expired = keys.packBackup(snapshot);
+    fs.writeFileSync(first.file, expired);
+    const manifest = JSON.parse(fs.readFileSync(first.file + '.manifest', 'utf8'));
+    const { signature, ...body } = manifest;
+    Object.assign(body, {
+      sha256: digest(expired),
+      createdAt: snapshot.createdAt,
+      expiresAt: snapshot.expiresAt,
+    });
+    fs.writeFileSync(
+      first.file + '.manifest',
+      JSON.stringify({ ...body, signature: keys.sign('backup-manifest:' + JSON.stringify(body)) }),
+    );
+    assert.throws(
+      () => restoreManagedBackup(f.env, first.file, path.join(f.root, 'expired')),
+      /expired/,
+    );
+    assert.ok(!fs.existsSync(path.join(f.root, 'expired', 'securepass.sqlite')));
+    const occupied = path.join(f.root, 'occupied');
+    fs.mkdirSync(occupied);
+    fs.writeFileSync(path.join(occupied, 'preserve.txt'), 'existing');
+    fs.writeFileSync(first.file, original);
+    fs.writeFileSync(first.file + '.manifest', JSON.stringify(manifest));
+    assert.throws(() => restoreManagedBackup(f.env, first.file, occupied), /unused/);
+    assert.equal(fs.readFileSync(path.join(occupied, 'preserve.txt'), 'utf8'), 'existing');
+    const legacy = keys.unpackBackup(original);
+    legacy.version = 1;
+    delete legacy.expiresAt;
+    const legacyEncrypted = keys.packBackup(legacy);
+    fs.writeFileSync(first.file, legacyEncrypted);
+    const { signature: legacySignature, ...legacyBody } = manifest;
+    legacyBody.sha256 = digest(legacyEncrypted);
+    fs.writeFileSync(
+      first.file + '.manifest',
+      JSON.stringify({
+        ...legacyBody,
+        signature: keys.sign('backup-manifest:' + JSON.stringify(legacyBody)),
+      }),
+    );
+    assert.throws(
+      () => restoreManagedBackup(f.env, first.file, path.join(f.root, 'legacy')),
+      /retention metadata mismatch|legacy snapshots/,
+    );
+    fs.unlinkSync(first.file + '.manifest');
+    assert.throws(
+      () => restoreManagedBackup(f.env, first.file, path.join(f.root, 'missing')),
+      /ENOENT/,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test('expiry cleanup handles manifest-publication crashes and continues past corrupt copies', async () => {
+  const f = await fixture();
+  try {
+    const bad = writeManagedBackup(f.env),
+      orphan = writeManagedBackup(f.env),
+      valid = writeManagedBackup(f.env);
+    fs.writeFileSync(bad.file + '.manifest', '{}');
+    fs.unlinkSync(orphan.file + '.manifest');
+    assert.throws(() => pruneManagedBackups(f.env, Date.now() + 8 * 86400000), /integrity/);
+    assert.ok(fs.existsSync(bad.file));
+    assert.ok(!fs.existsSync(orphan.file));
+    assert.ok(!fs.existsSync(valid.file));
+  } finally {
+    await f.close();
+  }
+});
+
+test('scheduled retention cleanup still executes when new backup creation fails', async () => {
+  const f = await fixture();
+  try {
+    const backed = writeManagedBackup(f.env),
+      events = [];
+    runBackupCycle(f.env, {
+      prune: (env) => pruneManagedBackups(env, Date.now() + 8 * 86400000),
+      write: () => {
+        const error = new Error('Disk full');
+        error.code = 'ENOSPC';
+        throw error;
+      },
+      log: (line) => events.push(JSON.parse(line)),
+      error: (line) => events.push(JSON.parse(line)),
+    });
+    assert.ok(!fs.existsSync(backed.file));
+    assert.equal(events.find((e) => e.event === 'backup_cleanup_completed').expiredFilesRemoved, 1);
+    assert.equal(events.find((e) => e.event === 'backup_failed').code, 'ENOSPC');
+  } finally {
+    await f.close();
+  }
+});
+
+test('production refuses overlapping database, governance-journal and backup directories', async () => {
+  const f = await fixture();
+  try {
+    const env = {
+      ...f.env,
+      NODE_ENV: 'production',
+      SECUREPASS_ORIGIN: 'https://visitors.example.test',
+      SECUREPASS_COOKIE_SECURE: 'true',
+      SECUREPASS_CONTROLLER_NAME: 'Example controller',
+      SECUREPASS_FACILITY_NAME: 'Example site',
+      SECUREPASS_PRIVACY_EMAIL: 'privacy@example.test',
+      SECUREPASS_DATA_KEYS: 'configured',
+      SECUREPASS_INDEX_KEY: 'configured',
+      SECUREPASS_AUDIT_KEY: 'configured',
+      SECUREPASS_BACKUP_KEY: 'configured',
+      SECUREPASS_BACKUP_POLICY_ACK: 'true',
+      SECUREPASS_BACKUP_DIR: path.join(f.root, 'backups'),
+    };
+    assert.doesNotThrow(() => loadConfig(env));
+    assert.throws(
+      () => loadConfig({ ...env, SECUREPASS_JOURNAL_DIR: env.SECUREPASS_DATA_DIR }),
+      /non-nested/,
+    );
+    assert.throws(
+      () =>
+        loadConfig({
+          ...env,
+          SECUREPASS_BACKUP_DIR: path.join(env.SECUREPASS_JOURNAL_DIR, 'copies'),
+        }),
+      /non-nested/,
+    );
+    assert.throws(() => loadConfig({ ...env, SECUREPASS_DATA_DIR: f.root }), /non-nested/);
+  } finally {
+    await f.close();
+  }
 });

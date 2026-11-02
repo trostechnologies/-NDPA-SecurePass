@@ -81,7 +81,7 @@ Use `--reset-mfa yes` only when the verified owner also lost their factor and re
 
 ## Backups and restoration
 
-The backup container creates encrypted consistent logical snapshots every six hours and prunes expired managed files using authenticated manifests. They exclude active sessions and ephemeral authentication material. Separate keys from backup storage, limit backup access and monitor pruning failures. Manually run `npm run ops -- backup` or `npm run ops -- prune-backups` under the same configuration.
+The backup container creates encrypted consistent logical snapshots every six hours. Expiry cleanup runs independently of creation success and processes unaffected expired copies even when another copy is damaged. Snapshots exclude active sessions and ephemeral authentication material. Format-2 snapshots embed authenticated expiry and have signed content-digest manifests; restore rejects expired copies. Preserve the snapshot filename and adjacent `.manifest` when copying them. Format-1 backups require reviewed offline recovery and cannot use normal restoration. Separate keys from backup storage, limit backup access and monitor both backup and cleanup failures. Manually run `npm run ops -- backup` or `npm run ops -- prune-backups` under the same configuration.
 
 Stop the writer and preserve current authoritative governance journal and audit custody. Restore into an UNUSED target directory:
 
