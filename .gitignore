@@ -1,4 +1,5 @@
 node_modules/
+.npm-cache/
 build/
 dist/
 coverage/
@@ -6,3 +7,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+securepass-data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

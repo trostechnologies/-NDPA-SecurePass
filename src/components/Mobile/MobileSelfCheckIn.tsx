@@ -1,9 +1,11 @@
+import { api, jsonBody } from '../../api';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
 
 import React, { useState, useRef, useEffect } from 'react';
+import { badgeReference } from '../../utils/security';
 import QRCode from 'qrcode';
 import {
   Visitor,
@@ -41,7 +43,7 @@ import {
 interface MobileSelfCheckInProps {
   hosts: HostEmployee[];
   invitations: PreRegistrationInvite[];
-  onCheckInComplete: (newVisitor: Visitor, updatedInviteId?: string) => void;
+  onCheckInComplete: (newVisitor: Visitor, inviteCode?: string) => Promise<Visitor>;
   onExitMobileView?: () => void;
 }
 
@@ -61,6 +63,10 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
   const [inviteError, setInviteError] = useState<string | null>(null);
 
   // Visitor fields
+  const submitting = useRef(false);
+  const [busy,setBusy]=useState(false);
+  const [submitError,setSubmitError]=useState('');
+  const [verifiedCode,setVerifiedCode]=useState('');
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
@@ -73,7 +79,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
   // Photo & Biometrics
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [biometricConsent, setBiometricConsent] = useState<boolean>(false);
-  const [generalConsent, setGeneralConsent] = useState<boolean>(true);
+  const [generalConsent, setGeneralConsent] = useState<boolean>(false);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -91,84 +97,28 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       h.department.toLowerCase().includes(hostSearch.toLowerCase())
   );
 
-  // Camera start/stop
-  const startCamera = async () => {
+  const handleLookupInvite = async () => {
+    setInviteError(null);setVerifiedCode('');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } },
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setCameraActive(true);
-    } catch (err) {
-      console.warn('Camera failed:', err);
-      alert('Camera access could not be opened. You can upload a photo or skip under NDPA Section 30.');
-    }
+      const found=await api<{hostEmployeeId:string}>('/invitations/lookup',{method:'POST',body:jsonBody({inviteCode:inviteCode.trim().toUpperCase()})});
+      setSelectedHostId(found.hostEmployeeId);setVerifiedCode(inviteCode.trim().toUpperCase());setHasInvite(false);setStep(1);
+    }catch(e){setInviteError(e instanceof Error?e.message:'Invitation unavailable');}
   };
-
-  const takeSnapshot = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth || 480;
-      canvas.height = video.videoHeight || 480;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        setPhotoUrl(dataUrl);
-        setBiometricConsent(true);
-      }
-      // Stop video track
-      const stream = video.srcObject as MediaStream;
-      stream?.getTracks().forEach((track) => track.stop());
-      setCameraActive(false);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setPhotoUrl(event.target?.result as string);
-        setBiometricConsent(true);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleLookupInvite = () => {
-    setInviteError(null);
-    const cleaned = inviteCode.trim().toUpperCase();
-    const found = invitations.find(
-      (inv) => inv.inviteCode.toUpperCase() === cleaned && inv.status === 'pending'
-    );
-    if (found) {
-      setFullName(found.guestName);
-      setEmail(found.guestEmail);
-      setPhone(found.guestPhone);
-      setOrganization(found.guestOrganization);
-      setSelectedHostId(found.hostEmployeeId);
-      setPurpose(found.purpose);
-      setStep(3); // Jump straight to consent & photo!
-    } else {
-      setInviteError('Invite code not found. Please check code or enter details manually.');
-    }
-  };
-
   const handleFinalSubmit = async () => {
     if (!fullName || !email || !phone) {
       alert('Please fill in required fields: Name, Email, and Phone.');
       return;
     }
     if (!generalConsent) {
-      alert('Please accept statutory NDPA 2023 processing consent.');
+      alert('Please acknowledge the privacy notice to proceed.');
       return;
     }
 
     const host = hosts.find((h) => h.id === selectedHostId) || hosts[0];
+    if(!host){setSubmitError('Select a host.');return;}
+    if(submitting.current)return;
+    submitting.current=true;setBusy(true);setSubmitError('');
+    try {
     const newVisitor: Visitor = {
       id: `VIS-MOB-${Date.now()}`,
       passCode: generatePassCode(),
@@ -180,7 +130,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       hostEmployeeName: host.name,
       hostDepartment: host.department,
       purpose: purpose.trim(),
-      visitType: hasInvite ? 'pre_registered' : 'walk_in',
+      visitType: verifiedCode ? 'pre_registered' : 'walk_in',
       checkInTime: new Date().toISOString(),
       status: 'checked_in',
       hasBiometricPhoto: Boolean(photoUrl && biometricConsent),
@@ -192,24 +142,19 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       badgePrinted: false,
       retentionExpiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 60).toISOString(),
       securityClearance: 'Standard',
-      wifiAccessGranted: true,
+      wifiAccessGranted: false,
       wifiCode: generateWifiCode(),
       badgeId: generateBadgeId(),
     };
 
-    onCheckInComplete(newVisitor);
-    setIssuedPass(newVisitor);
+    const saved=await onCheckInComplete(newVisitor,verifiedCode||undefined);
+    setIssuedPass(saved);
 
     // Generate Pass QR Code for mobile screen
+    setPassQrDataUrl('');
     try {
       const qr = await QRCode.toDataURL(
-        JSON.stringify({
-          t: 'PASS',
-          code: newVisitor.passCode,
-          id: newVisitor.badgeId,
-          name: newVisitor.fullName,
-          host: newVisitor.hostEmployeeName,
-        }),
+        badgeReference(saved),
         { width: 200, margin: 1 }
       );
       setPassQrDataUrl(qr);
@@ -217,12 +162,15 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       console.error(e);
     }
 
-    setStep(4); // Digital Pass view!
+    setStep(4); // Only a saved server record can reach the pass view.
+    }catch(e){setSubmitError(e instanceof Error?e.message:'Check-in failed');}
+    finally{submitting.current=false;setBusy(false);}
   };
 
   // Content of the Mobile Self Check-In UI
   const mobileContent = (
     <div className="bg-slate-950 text-slate-100 min-h-[640px] flex flex-col justify-between">
+      {submitError&&<p role="alert" className="text-red-300 p-4">{submitError}</p>}
       {/* Mobile Top Navigation Bar */}
       <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -259,7 +207,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
               <span>
                 {step === 1 && '1. Your Details'}
                 {step === 2 && '2. Host & Purpose'}
-                {step === 3 && '3. Consent & Photo'}
+                {step === 3 && '3. Privacy acknowledgement'}
               </span>
               <span>Step {step} of 3</span>
             </div>
@@ -283,7 +231,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setHasInvite(!hasInvite)}
+                onClick={() => {setHasInvite(!hasInvite);setVerifiedCode('');}}
                   className="text-xs text-emerald-400 font-medium"
                 >
                   {hasInvite ? 'Enter Manually' : 'Redeem Code'}
@@ -501,73 +449,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
         {step === 3 && (
           <div className="space-y-4">
             {/* NDPA Section 30 notice */}
-            <div className="p-3 bg-emerald-950/20 border border-emerald-800/40 rounded-xl text-xs space-y-1">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
-                <span>NDPA 2023 Sec 30: Photo is Optional</span>
-              </div>
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                Biometric photos are sensitive personal data. You are free to take a selfie for your badge,
-                or skip this step with zero delay.
-              </p>
-            </div>
-
-            {/* Photo Preview / Camera */}
-            <div className="w-full aspect-[4/3] bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden relative flex items-center justify-center">
-              {photoUrl ? (
-                <div className="relative w-full h-full">
-                  <img src={photoUrl} alt="Selfie" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => setPhotoUrl(null)}
-                    className="absolute bottom-2 right-2 px-2.5 py-1 bg-slate-900/80 backdrop-blur-sm text-[11px] text-slate-200 rounded-lg border border-slate-700"
-                  >
-                    Retake
-                  </button>
-                </div>
-              ) : cameraActive ? (
-                <div className="relative w-full h-full bg-black">
-                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={takeSnapshot}
-                    className="absolute bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 bg-emerald-400 text-slate-950 font-bold text-xs rounded-full shadow-lg"
-                  >
-                    Snap Selfie
-                  </button>
-                </div>
-              ) : (
-                <div className="text-center p-4 space-y-2">
-                  <Camera className="w-8 h-8 text-slate-500 mx-auto" />
-                  <p className="text-xs text-slate-400">Add badge photo (Optional)</p>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    <button
-                      type="button"
-                      onClick={startCamera}
-                      className="px-3 py-1.5 bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg"
-                    >
-                      Open Camera
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-lg"
-                    >
-                      Upload
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <canvas ref={canvasRef} className="hidden" />
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept="image/*"
-              className="hidden"
-            />
+            <p className="text-sm text-slate-400">Photo collection is disabled. Continue without a photo.</p>
 
             {/* Consent Checkbox */}
             <label className="flex items-start gap-2.5 p-3 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer text-[11px] text-slate-300">
@@ -578,8 +460,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400"
               />
               <span className="leading-relaxed">
-                I agree to the processing of my visitor telemetry under NDPA 2023 Section 25 for physical facility
-                security for {NDPA_ORGANIZATION_INFO.dataRetentionDays} days.
+                {NDPA_ORGANIZATION_INFO.privacyNoticeText} I acknowledge notice version {NDPA_ORGANIZATION_INFO.noticeVersion}.
               </span>
             </label>
 
@@ -594,6 +475,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
               <button
                 type="button"
                 onClick={handleFinalSubmit}
+                  disabled={busy}
                 className="w-2/3 h-12 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-[0.98] transition-transform"
               >
                 <CheckCircle2 className="w-4 h-4" /> Check In &amp; Get Pass
@@ -706,7 +588,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 type="button"
                 onClick={() => {
                   setStep(1);
-                  setIssuedPass(null);
+                  setPassQrDataUrl('');setIssuedPass(null);setVerifiedCode('');setGeneralConsent(false);setHasInvite(false);setInviteCode('');
                   setFullName('');
                   setEmail('');
                   setPhone('');
@@ -724,7 +606,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
 
       {/* Bottom Sticky Regulatory Badge */}
       <footer className="p-3 border-t border-slate-900 text-center text-[10px] text-slate-500 font-mono">
-        Nigeria Data Protection Act (NDPA 2023) Verified · Reg: {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+        Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
       </footer>
     </div>
   );

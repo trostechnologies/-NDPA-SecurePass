@@ -1,0 +1,52 @@
+[
+  {
+    "id": "HOST-01",
+    "name": "Olumide Adeleke",
+    "email": "o.adeleke@zenithholdings.ng",
+    "phone": "+234 802 334 1109",
+    "department": "Executive Boardroom",
+    "floor": "14th Floor, Tower A",
+    "title": "Managing Director & CEO",
+    "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80"
+  },
+  {
+    "id": "HOST-02",
+    "name": "Barr. Zainab Mohammed",
+    "email": "z.mohammed@zenithholdings.ng",
+    "phone": "+234 803 551 8820",
+    "department": "Legal & NDPA Compliance",
+    "floor": "9th Floor, West Wing",
+    "title": "Data Protection Officer (DPO)",
+    "avatar": "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80"
+  },
+  {
+    "id": "HOST-03",
+    "name": "Chukwudi Eze",
+    "email": "c.eze@zenithholdings.ng",
+    "phone": "+234 814 772 9011",
+    "department": "Enterprise Technology & Infrastructure",
+    "floor": "6th Floor, IT Ops Hub",
+    "title": "Chief Information Security Officer",
+    "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80"
+  },
+  {
+    "id": "HOST-04",
+    "name": "Amina Bello",
+    "email": "a.bello@zenithholdings.ng",
+    "phone": "+234 705 119 4432",
+    "department": "Human Capital Management",
+    "floor": "4th Floor, Suite 402",
+    "title": "Head of Talent Acquisition",
+    "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
+  },
+  {
+    "id": "HOST-05",
+    "name": "Tunde Oladipo",
+    "email": "t.oladipo@zenithholdings.ng",
+    "phone": "+234 809 660 3381",
+    "department": "Finance & Treasury",
+    "floor": "11th Floor, East Wing",
+    "title": "Chief Financial Officer",
+    "avatar": "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80"
+  }
+]

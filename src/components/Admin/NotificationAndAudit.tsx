@@ -56,7 +56,7 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Shield className="w-3.5 h-3.5 text-emerald-400" /> Immutable NDPA Audit Trail ({auditLogs.length})
+            <Shield className="w-3.5 h-3.5 text-emerald-400" /> Operational Audit Log ({auditLogs.length})
           </button>
         </div>
 
@@ -66,7 +66,7 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
             onClick={onSendTestNotification}
             className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-sm self-start sm:self-auto"
           >
-            <Send className="w-3.5 h-3.5" /> Dispatch Test Host Alert
+            <Send className="w-3.5 h-3.5" /> Check Email Configuration
           </button>
         )}
       </div>

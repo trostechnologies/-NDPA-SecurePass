@@ -306,7 +306,7 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
                               onClick={() => {
                                 if (
                                   confirm(
-                                    `Execute NDPA Section 37 Right to Erasure for ${visitor.fullName}? All personal identifiable info will be permanently redacted.`
+                                    `Execute NDPA Section 37 Right to Erasure for ${visitor.fullName}? Primary visitor and associated invitations will be deleted. Backups and exported copies require separate management.`
                                   )
                                 ) {
                                   onErasureRequest(visitor.id);

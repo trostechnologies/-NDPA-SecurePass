@@ -162,7 +162,7 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
             {/* NDPA Regulatory Footer */}
             <div className="w-full pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[9px] text-slate-400 font-mono">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>NDPA 2023 Compliant · NDPC Reg #{NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}</span>
+              <span>Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}</span>
             </div>
           </div>
         </div>

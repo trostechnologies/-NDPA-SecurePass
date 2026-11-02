@@ -72,43 +72,26 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
             </div>
             <div>
               <div className="text-xs font-mono font-bold text-emerald-400">
-                NDPC LICENSED CONTROLLER · REG: {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+                Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
               </div>
               <h2 className="text-lg font-bold text-slate-100 tracking-tight mt-0.5">
                 Nigeria Data Protection Act (NDPA 2023) Compliance Center
               </h2>
               <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
-                Automated enforcement of principles of lawful basis, purpose limitation, storage
-                restriction (60-day lifecycle), and voluntary biometric processing under Section 30.
+                Operational visitor retention and privacy tools. Controller review and independent backup management are required.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-            <a
-              href="/SecurePass_NDPA_PRD.pdf"
-              download="SecurePass_NDPA_PRD.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-emerald-200 bg-emerald-950/70 hover:bg-emerald-900/90 border border-emerald-600/70 rounded-xl transition-colors shadow-sm"
-              title="Download & View Product Requirement Document in PDF format"
-            >
-              <FileCheck className="w-4 h-4 text-emerald-400" /> Download PRD (PDF)
-            </a>
-            <a
-              href="/SecurePass_NDPA_PRD.docx"
-              download="SecurePass_NDPA_PRD.docx"
-              className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors shadow-sm"
-              title="Download Product Requirement Document in MS Word (.docx) format"
-            >
-              <FileText className="w-3.5 h-3.5 text-slate-400" /> Word (.docx)
-            </a>
+
+
             <button
               type="button"
               onClick={() => exportNDPCAuditSummary(visitors, auditLogs)}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors shadow-sm"
             >
-              <Download className="w-4 h-4" /> Export NDPC Audit Report
+              <Download className="w-4 h-4" /> Export Operational Summary
             </button>
           </div>
         </div>
@@ -119,14 +102,14 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
         {/* KPI 1 */}
         <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Lawful Consent Rate</span>
+            <span>Notice Acknowledgement Rate</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold font-mono text-slate-100 tabular-nums">
             {totalVisitors > 0 ? `${Math.round((consentedVisitors / totalVisitors) * 100)}%` : '100%'}
           </div>
           <div className="text-[11px] text-emerald-400/90 font-medium">
-            NDPA Sec 25 &amp; 26 Compliant
+            Recorded notice acknowledgements
           </div>
         </div>
 
@@ -183,7 +166,7 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
               Personal data must not be kept longer than necessary. Records exceeding {NDPA_ORGANIZATION_INFO.dataRetentionDays} days
-              must be purged or anonymized.
+              are scheduled for primary-database deletion. Backups and exports require separate management.
             </p>
           </div>
 
@@ -265,7 +248,7 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
             Data Subject Rights Desk (NDPA 2023 Sections 34 &amp; 37)
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Handle official Data Subject Access Requests (DSAR). Search a visitor to generate a certified
+            Handle official Data Subject Access Requests (DSAR). Search a visitor to generate an operational
             statutory data disclosure dossier or execute their Right to Erasure.
           </p>
         </div>
