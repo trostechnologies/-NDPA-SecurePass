@@ -1,3 +1,4 @@
+import { csvCell } from './security';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -6,29 +7,24 @@
 import { Visitor, NDPAAuditLog } from '../types/visitor';
 
 export const NDPA_ORGANIZATION_INFO = {
-  companyName: 'Zenith-Tower Holdings PLC',
-  facilityName: 'Victoria Island Corporate Tower',
-  address: 'Plot 1045, Adeola Odeku Street, Victoria Island, Lagos, Nigeria',
-  ndpcRegistrationNumber: 'NDPC/DPCO/2024/0912',
-  dpoName: 'Barr. Zainab Mohammed, LL.B, BL, CIPP/E',
-  dpoEmail: 'dpo@zenithholdings.ng',
-  dpoPhone: '+234 (0) 1 270 4000',
-  dataRetentionDays: 60,
-  lawfulBasisNotice: 'Nigerian Data Protection Act (NDPA) 2023, Sections 24, 25, 26, 30 & 39',
+  companyName:'Development controller',facilityName:'Development facility',address:'Not configured',
+  ndpcRegistrationNumber:'Not configured',dpoName:'Privacy contact',dpoEmail:'',dpoPhone:'',
+  dataRetentionDays:60,lawfulBasisNotice:'Refer to the controller-approved privacy notice',
+  noticeVersion:'development-1',privacyNoticeText:'Loading facility privacy notice',
 };
 
 export function generatePassCode(): string {
-  const num = Math.floor(1000 + Math.random() * 9000);
+  const num = crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
   return `NG-VIS-${num}`;
 }
 
 export function generateBadgeId(): string {
-  const num = Math.floor(1000 + Math.random() * 9000);
+  const num = crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
   return `BDG-${num}`;
 }
 
 export function generateWifiCode(): string {
-  const code = Math.floor(1000 + Math.random() * 9000);
+  const code = crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
   return `ZENITH-GUEST-${code}`;
 }
 
@@ -96,27 +92,8 @@ export function exportVisitorsCSV(visitors: Visitor[]): void {
     'Retention Expiry',
   ];
 
-  const rows = visitors.map(v => [
-    `"${v.passCode}"`,
-    `"${v.fullName.replace(/"/g, '""')}"`,
-    `"${v.email}"`,
-    `"${v.phone}"`,
-    `"${v.organization.replace(/"/g, '""')}"`,
-    `"${v.hostEmployeeName.replace(/"/g, '""')}"`,
-    `"${v.hostDepartment}"`,
-    `"${v.purpose.replace(/"/g, '""')}"`,
-    `"${v.visitType}"`,
-    `"${v.checkInTime}"`,
-    `"${v.checkOutTime || 'Active'}"`,
-    `"${v.status}"`,
-    `"${v.hasBiometricPhoto ? 'Yes (Consented)' : 'No (Opted-Out)'}"`,
-    `"${v.generalConsentGranted ? 'Yes' : 'No'}"`,
-    `"${v.vehiclePlate || 'N/A'}"`,
-    `"${v.securityClearance}"`,
-    `"${v.retentionExpiryDate ? v.retentionExpiryDate.split('T')[0] : 'N/A'}"`,
-  ]);
-
-  const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const rows = visitors.map(v => [v.passCode,v.fullName,v.email,v.phone,v.organization,v.hostEmployeeName,v.hostDepartment,v.purpose,v.visitType,v.checkInTime,v.checkOutTime||'Active',v.status,v.hasBiometricPhoto?'Yes':'No',v.generalConsentGranted?'Yes':'No',v.vehiclePlate||'',v.securityClearance,v.retentionExpiryDate]);
+  const csvContent=[headers,...rows].map(row=>row.map(csvCell).join(',')).join('\r\n');
   const dateStr = new Date().toISOString().split('T')[0];
   downloadFile(csvContent, `NDPA_Visitor_Access_Log_${dateStr}.csv`, 'text/csv;charset=utf-8;');
 }
@@ -126,7 +103,7 @@ export function exportDSARReport(visitor: Visitor): void {
   const content = `
 ================================================================================
              NIGERIA DATA PROTECTION ACT (NDPA 2023) - SECTION 34
-             DATA SUBJECT ACCESS REQUEST (DSAR) OFFICIAL DOSSIER
+             DATA SUBJECT ACCESS REQUEST (DSAR) OPERATIONAL EXPORT
 ================================================================================
 
 CONTROLLER DETAILS:
@@ -145,10 +122,10 @@ Primary Contact:     ${visitor.email} | ${visitor.phone}
 Organization:        ${visitor.organization}
 
 LAWFUL BASIS OF PROCESSING (NDPA SECTION 25):
-- Lawful Basis:      Explicit Consent & Legitimate Facility Security Interest
-- General Consent:   ${visitor.generalConsentGranted ? 'GRANTED' : 'NOT GRANTED'} (Recorded: ${visitor.consentTimestamp})
-- Sensitive Data:    Biometric Photo ${visitor.biometricConsentGranted ? 'CONSENTED (Sec 30)' : 'DECLINED (Sec 30)'}
-- Photo Stored:      ${visitor.hasBiometricPhoto ? 'Stored in encrypted local repository' : 'None stored (Voluntary opt-out honoured)'}
+- Lawful Basis:      Refer to the controller-approved privacy notice
+- Notice acknowledgement:   ${visitor.generalConsentGranted ? 'RECORDED' : 'NOT RECORDED'} (Recorded: ${visitor.consentTimestamp})
+- Sensitive Data:    Photo collection disabled in this release
+- Photo Stored:      ${visitor.hasBiometricPhoto ? 'Photo state reported by record; storage controls require verification' : 'None stored (Voluntary opt-out honoured)'}
 
 VISIT TELEMETRY:
 Host Person:         ${visitor.hostEmployeeName} (${visitor.hostDepartment})
@@ -163,13 +140,12 @@ Government ID Type:  ${visitor.governmentIdType || 'N/A'} (Masked ID: ${visitor.
 
 RETENTION & ERASURE SCHEDULE (NDPA SECTION 24(1)(d)):
 Retention Expiry:    ${visitor.retentionExpiryDate}
-Scheduled Purge:     Automated permanent cryptographic redaction at T+60 days
+Scheduled Purge:     Primary database deletion after the configured retention period. Backups require independent lifecycle management.
 Right to Erasure:    Data subject may contact ${NDPA_ORGANIZATION_INFO.dpoEmail} to demand prior deletion.
 
 ================================================================================
-CERTIFICATION:
-This document constitutes a certified disclosure pursuant to Section 34 of the
-Nigerian Data Protection Act, 2023. Generated by SecurePass Enterprise Compliance.
+EXPORT LIMITATIONS:
+Operational data export for controller review. Identity verification and disclosure approval are handled by the controller. This is not a compliance certification.
 ================================================================================
 `;
 
@@ -203,29 +179,23 @@ Reporting Timestamp: ${new Date().toISOString()}
 Total Processed Records:             ${total}
 Currently Active on Premises:        ${activeCount}
 Biometric Opt-in Rate (Sec 30):      ${consentPercentage}% (${photoConsented} consented, ${photoDeclined} exercised opt-out)
-Records Anonymized under Sec 37:     ${anonymized}
+Legacy records marked anonymized:     ${anonymized}
 Records Overdue for Retention Purge: ${overduePrune}
-Mandated Retention Window:           ${NDPA_ORGANIZATION_INFO.dataRetentionDays} Days
+Configured Retention Window:           ${NDPA_ORGANIZATION_INFO.dataRetentionDays} Days
 
-2. PRINCIPLES OF DATA PROCESSING ASSESSMENT (NDPA SECTION 24)
+2. OPERATIONAL LIMITATIONS
 --------------------------------------------------------------------------------
-[PASS] Lawfulness, Fairness & Transparency (Sec 24(1)(a)):
-       Explicit multi-clause consent modal displayed to 100% of registrants.
-[PASS] Purpose Limitation (Sec 24(1)(b)):
-       Personal data processed strictly for physical building safety and escort.
-[PASS] Data Minimization (Sec 24(1)(c)):
-       Government identification numbers automatically masked to prevent shoulder surfing.
-[PASS] Storage Limitation (Sec 24(1)(d)):
-       Strict 60-day maximum retention lifecycle with automated compliance flags.
-[PASS] Integrity and Confidentiality (Sec 24(1)(f)):
-       Encrypted local vault, role-based front desk controls, immutable audit logs.
+Primary records are deleted on expiry. Backups and exported copies require separate management.
+The application does not provide database encryption or immutable audit storage.
+Photo and government-ID collection are disabled pending an approved lifecycle.
+These metrics do not establish legal compliance or certification.
 
-3. RECENT IMMUTABLE AUDIT TRAIL ENTRIES (LAST ${Math.min(auditLogs.length, 10)})
+3. RECENT OPERATIONAL AUDIT ENTRIES (LAST ${Math.min(auditLogs.length,10)})
 --------------------------------------------------------------------------------
 ${auditLogs.slice(0, 10).map(log => `[${log.timestamp.slice(0, 19).replace('T', ' ')}] ${log.action.padEnd(20)} | Actor: ${log.actor.padEnd(30)} | Legal Basis: ${log.lawfulBasis}`).join('\n')}
 
 ================================================================================
-END OF AUDIT SUMMARY - SUBMITTABLE TO NIGERIA DATA PROTECTION COMMISSION (NDPC)
+END OF OPERATIONAL SUMMARY — CONTROLLER REVIEW REQUIRED
 ================================================================================
 `;
 

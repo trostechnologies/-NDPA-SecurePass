@@ -9,6 +9,7 @@ export type SecurityClearance = 'Standard' | 'Escort Required' | 'Level 1 High S
 export type GovernmentIdType = 'NIN' | 'Voters Card' | 'Drivers License' | 'International Passport' | 'Corporate ID';
 
 export interface HostEmployee {
+  userId?: string;
   id: string;
   name: string;
   email: string;
@@ -39,6 +40,7 @@ export interface Visitor {
   biometricConsentGranted: boolean; // NDPA 2023 Section 30
   generalConsentGranted: boolean;   // NDPA 2023 Section 25 & 26
   consentTimestamp: string;
+  noticeVersion?: string;
   vehiclePlate?: string;
   governmentIdType?: GovernmentIdType;
   governmentIdNumberMasked?: string;

@@ -1,9 +1,10 @@
+import { api, jsonBody } from '../../api';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Visitor,
   HostEmployee,
@@ -12,7 +13,6 @@ import {
   GovernmentIdType,
   SecurityClearance,
 } from '../../types/visitor';
-import { CameraCapture } from './CameraCapture';
 import { ConsentNoticeModal } from './ConsentNoticeModal';
 import {
   generatePassCode,
@@ -37,8 +37,9 @@ import {
 interface VisitorKioskProps {
   hosts: HostEmployee[];
   invitations: PreRegistrationInvite[];
-  onCheckInComplete: (newVisitor: Visitor, updatedInviteId?: string) => void;
+  onCheckInComplete: (newVisitor: Visitor, inviteCode?: string) => Promise<Visitor>;
   onOpenBadge: (visitor: Visitor) => void;
+  initialInviteCode?: string;
 }
 
 export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
@@ -46,11 +47,16 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
   invitations,
   onCheckInComplete,
   onOpenBadge,
+  initialInviteCode='',
 }) => {
   const [mode, setMode] = useState<'walk_in' | 'redeem_invite'>('walk_in');
 
   // Form State for Walk-In
   const [step, setStep] = useState<number>(1);
+  const submitting = useRef(false);
+  const [busy,setBusy]=useState(false);
+  const [submitError,setSubmitError]=useState('');
+  const [verifiedCode,setVerifiedCode]=useState('');
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
@@ -68,7 +74,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
   // Biometrics & Consent
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [biometricConsent, setBiometricConsent] = useState<boolean>(false);
-  const [generalConsent, setGeneralConsent] = useState<boolean>(true);
+  const [generalConsent, setGeneralConsent] = useState<boolean>(false);
   const [isConsentModalOpen, setIsConsentModalOpen] = useState<boolean>(false);
 
   // Invite Redemption State
@@ -87,34 +93,22 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
 
   const selectedHost = hosts.find(h => h.id === selectedHostId) || hosts[0];
 
-  const handleLookupInvite = (code: string) => {
-    setInviteError(null);
-    const cleaned = code.trim().toUpperCase();
-    const found = invitations.find(
-      inv => inv.inviteCode.toUpperCase() === cleaned && inv.status === 'pending'
-    );
-    if (found) {
-      setMatchedInvite(found);
-      setFullName(found.guestName);
-      setEmail(found.guestEmail);
-      setPhone(found.guestPhone);
-      setOrganization(found.guestOrganization);
-      setSelectedHostId(found.hostEmployeeId);
-      setPurpose(found.purpose);
-      setVisitType('pre_registered');
-    } else {
-      setMatchedInvite(null);
-      setInviteError(`Invite code "${cleaned}" not found or already checked in. Check code or proceed as walk-in.`);
-    }
+  const handleLookupInvite = async (code:string) => {
+    setInviteError(null);setVerifiedCode('');setMatchedInvite(null);
+    try {
+      const found=await api<{id:string;hostEmployeeId:string}>('/invitations/lookup',{method:'POST',body:jsonBody({inviteCode:code.trim().toUpperCase()})});
+      setSelectedHostId(found.hostEmployeeId);setVerifiedCode(code.trim().toUpperCase());
+      setMode('walk_in');setStep(1);setVisitType('pre_registered');
+    }catch(e){setInviteError(e instanceof Error?e.message:'Invitation unavailable');}
   };
-
-  const handleFinalSubmit = () => {
+  useEffect(()=>{if(initialInviteCode){setInviteCodeInput(initialInviteCode);void handleLookupInvite(initialInviteCode);}},[initialInviteCode]);
+  const handleFinalSubmit = async () => {
     if (!fullName || !email || !phone) {
       alert('Please fill in your Name, Email, and Phone Number.');
       return;
     }
     if (!generalConsent) {
-      alert('Statutory NDPA 2023 consent must be confirmed to proceed.');
+      alert('Please acknowledge the privacy notice to proceed.');
       return;
     }
 
@@ -127,6 +121,10 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
       maskedId = clean.length > 4 ? `•••• •••• ${clean.slice(-4)}` : '••••';
     }
 
+    if(!host){setSubmitError('Select a host.');return;}
+    if(submitting.current)return;
+    submitting.current=true;setBusy(true);setSubmitError('');
+    try {
     const newVisitor: Visitor = {
       id: `VIS-2026-${Math.floor(100 + Math.random() * 900)}`,
       passCode: generatePassCode(),
@@ -147,20 +145,16 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
       generalConsentGranted: true,
       consentTimestamp: new Date().toISOString(),
       vehiclePlate: vehiclePlate.trim() || undefined,
-      governmentIdType: govIdType,
-      governmentIdNumberMasked: maskedId || undefined,
-      emergencyContactName: emergencyName.trim() || undefined,
-      emergencyContactPhone: emergencyPhone.trim() || undefined,
       badgePrinted: false,
       retentionExpiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 60).toISOString(), // 60 days
-      securityClearance,
-      wifiAccessGranted: true,
+      securityClearance:'Standard',
+      wifiAccessGranted: false,
       wifiCode: generateWifiCode(),
       badgeId: generateBadgeId(),
     };
 
-    onCheckInComplete(newVisitor, matchedInvite?.id);
-    onOpenBadge(newVisitor);
+    const saved=await onCheckInComplete(newVisitor,verifiedCode||undefined);
+    onOpenBadge(saved);
 
     // Reset form
     setStep(1);
@@ -173,22 +167,26 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
     setPhotoUrl(null);
     setBiometricConsent(false);
     setMatchedInvite(null);
-    setInviteCodeInput('');
+    setInviteCodeInput('');setVerifiedCode('');setGeneralConsent(false);
+    }catch(e){setSubmitError(e instanceof Error?e.message:'Check-in failed');}
+    finally{submitting.current=false;setBusy(false);}
   };
 
   return (
     <div className="space-y-6">
+      {submitError&&<p role="alert" className="text-red-300">{submitError}</p>}
+      {verifiedCode&&<p className="text-emerald-300">Invitation found. Enter the guest details and invitation email to complete check-in.</p>}
       {/* Clean Compact Kiosk Header (Image banner removed) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg">
         <div>
           <div className="text-[11px] font-mono font-bold tracking-wider uppercase text-emerald-400">
-            {NDPA_ORGANIZATION_INFO.facilityName} · NDPA 2023 COMPLIANT
+            {NDPA_ORGANIZATION_INFO.facilityName} · Visitor reception
           </div>
           <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight mt-0.5">
             Visitor Access Registration Kiosk
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Self-service reception check-in with voluntary biometrics and instant badge generation.
+            Self-service reception check-in. Passes are issued after the server saves your visit.
           </p>
         </div>
 
@@ -198,7 +196,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
             type="button"
             onClick={() => {
               setMode('walk_in');
-              setMatchedInvite(null);
+              setMatchedInvite(null);setVerifiedCode('');
             }}
             className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
               mode === 'walk_in'
@@ -253,27 +251,6 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
               </button>
             </div>
 
-            {/* Quick demo chips for convenient testing */}
-            <div className="flex items-center gap-2 text-xs text-slate-400 flex-wrap">
-              <span>Quick test invites:</span>
-              {invitations
-                .filter(i => i.status === 'pending')
-                .slice(0, 3)
-                .map(inv => (
-                  <button
-                    key={inv.id}
-                    type="button"
-                    onClick={() => {
-                      setInviteCodeInput(inv.inviteCode);
-                      handleLookupInvite(inv.inviteCode);
-                    }}
-                    className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded font-mono text-[11px] transition-colors"
-                  >
-                    {inv.inviteCode} ({inv.guestName.split(' ')[0]})
-                  </button>
-                ))}
-            </div>
-
             {inviteError && (
               <p className="text-xs text-amber-400 bg-amber-950/30 p-2.5 rounded-lg border border-amber-900/50">
                 {inviteError}
@@ -314,17 +291,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
 
               {/* Optional Camera for Invited Guest */}
               <div className="pt-2">
-                <CameraCapture
-                  onCapture={(photo, consent) => {
-                    setPhotoUrl(photo);
-                    setBiometricConsent(consent);
-                  }}
-                  onSkip={() => {
-                    setPhotoUrl(null);
-                    setBiometricConsent(false);
-                  }}
-                  initialPhotoUrl={photoUrl || undefined}
-                />
+                <p className="text-sm text-slate-400">Photo collection is disabled. Continue without a photo.</p>
               </div>
 
               {/* Instant Check-In Button */}
@@ -339,6 +306,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                 <button
                   type="button"
                   onClick={handleFinalSubmit}
+                  disabled={busy}
                   className="px-6 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition-transform active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Complete Check-In &amp; Print Pass
@@ -362,14 +330,14 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                 <h2 className="text-sm font-bold text-slate-100">
                   {step === 1 && 'Visitor Personal Telemetry'}
                   {step === 2 && 'Host & Purpose Specification'}
-                  {step === 3 && 'Optional Biometric Photograph (NDPA Sec 30)'}
-                  {step === 4 && 'NDPA Consent & Security Clearance'}
+                  {step === 3 && 'Photo collection disabled'}
+                  {step === 4 && 'Privacy acknowledgement'}
                 </h2>
                 <p className="text-xs text-slate-400">
                   {step === 1 && 'Basic identity details required under NDPA principles of data minimization.'}
                   {step === 2 && 'Designate the official staff member or department hosting your visit.'}
-                  {step === 3 && 'Biometric images are strictly voluntary. You may skip without hesitation.'}
-                  {step === 4 && 'Statutory consent review and immediate visitor badge issuance.'}
+                  {step === 3 && 'Photo collection is disabled in this release.'}
+                  {step === 4 && 'Review the privacy notice before saving your visit.'}
                 </p>
               </div>
             </div>
@@ -457,64 +425,10 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    ID Document Type
-                  </label>
-                  <select
-                    value={govIdType}
-                    onChange={(e) => setGovIdType(e.target.value as GovernmentIdType)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-400"
-                  >
-                    <option value="NIN">National Identity Number (NIN)</option>
-                    <option value="Voters Card">INEC Voter's Card</option>
-                    <option value="Drivers License">FRSC Driver's License</option>
-                    <option value="International Passport">International Passport</option>
-                    <option value="Corporate ID">Corporate Employee Badge</option>
-                  </select>
-                </div>
+                <p className="text-xs text-slate-400">Government-ID collection is disabled.</p>
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    ID Number (Masked for Privacy)
-                  </label>
-                  <input
-                    type="text"
-                    value={govIdNumber}
-                    onChange={(e) => setGovIdNumber(e.target.value)}
-                    placeholder="Last 4 digits or ID number"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
-                  />
-                </div>
               </div>
 
-              {/* Emergency Contact */}
-              <div className="pt-2 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Emergency Contact Name (Facility Safety)
-                  </label>
-                  <input
-                    type="text"
-                    value={emergencyName}
-                    onChange={(e) => setEmergencyName(e.target.value)}
-                    placeholder="e.g. Folake Fashola"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Emergency Contact Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={emergencyPhone}
-                    onChange={(e) => setEmergencyPhone(e.target.value)}
-                    placeholder="e.g. +234 802 331 4455"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
-                  />
-                </div>
-              </div>
 
               <div className="flex justify-end pt-4">
                 <button
@@ -642,7 +556,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   onClick={() => setStep(3)}
                   className="px-5 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
                 >
-                  Proceed to Optional Photo <ChevronRight className="w-4 h-4" />
+                  Continue <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -651,18 +565,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
           {/* STEP 3: OPTIONAL BIOMETRIC PHOTO CAPTURE */}
           {step === 3 && (
             <div className="space-y-4">
-              <CameraCapture
-                onCapture={(photo, consent) => {
-                  setPhotoUrl(photo);
-                  setBiometricConsent(consent);
-                }}
-                onSkip={() => {
-                  setPhotoUrl(null);
-                  setBiometricConsent(false);
-                  setStep(4);
-                }}
-                initialPhotoUrl={photoUrl || undefined}
-              />
+              <p className="text-sm text-slate-400">Photo collection is disabled. Continue without a photo.</p>
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-800">
                 <button
@@ -677,7 +580,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   onClick={() => setStep(4)}
                   className="px-5 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-semibold text-xs rounded-xl flex items-center gap-1.5 transition-colors shadow-sm"
                 >
-                  Continue to Consent Review <ChevronRight className="w-4 h-4" />
+                  Continue to Privacy Review <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -707,48 +610,27 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                   <div>
                     <span className="text-slate-500 block">Biometric Photo</span>
                     <span className="text-slate-300 block">
-                      {photoUrl && biometricConsent ? 'Captured (Consented)' : 'Skipped (Sec 30 Opt-Out)'}
+                      {photoUrl && biometricConsent ? 'Captured (Consented)' : 'Collection disabled'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Security Clearance Selection (Admin / Front desk control) */}
-              <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                <label className="block text-xs font-semibold text-slate-200">
-                  Assigned Security Clearance
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {(['Standard', 'Escort Required', 'Level 1 High Security', 'Data Center Restricted'] as SecurityClearance[]).map((clearance) => (
-                    <button
-                      key={clearance}
-                      type="button"
-                      onClick={() => setSecurityClearance(clearance)}
-                      className={`p-2 rounded-lg text-left text-[11px] font-medium border transition-colors ${
-                        securityClearance === clearance
-                          ? 'bg-emerald-950/40 border-emerald-500 text-emerald-300 font-semibold'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {clearance}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-xs text-slate-400">Standard reception registration. This pass does not authorize physical access or provision Wi-Fi.</p>
 
               {/* Statutory Legal Consent Checkbox */}
               <div className="p-4 bg-slate-950 border border-emerald-900/40 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-emerald-400 font-semibold text-xs">
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Nigerian Data Protection Act (NDPA 2023) Legal Declaration</span>
+                    <span>Facility privacy acknowledgement</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setIsConsentModalOpen(true)}
                     className="text-xs text-emerald-400 hover:underline"
                   >
-                    Read Full Legal Notice
+                    Read Privacy Notice
                   </button>
                 </div>
 
@@ -760,10 +642,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400"
                   />
                   <span className="leading-relaxed">
-                    I declare that the information provided is accurate. I understand and grant lawful consent
-                    pursuant to Section 25 of the NDPA 2023 for {NDPA_ORGANIZATION_INFO.companyName} to process
-                    my personal data strictly for premises security, emergency evacuation muster, and authorized
-                    access control for a maximum retention period of {NDPA_ORGANIZATION_INFO.dataRetentionDays} days.
+                    {NDPA_ORGANIZATION_INFO.privacyNoticeText} I acknowledge notice version {NDPA_ORGANIZATION_INFO.noticeVersion}.
                   </span>
                 </label>
               </div>
@@ -779,6 +658,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                 <button
                   type="button"
                   onClick={handleFinalSubmit}
+                  disabled={busy}
                   className="px-6 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs rounded-xl shadow-lg flex items-center gap-2 transition-transform active:scale-95"
                 >
                   <CheckCircle2 className="w-4 h-4" /> Complete Registration &amp; Print Badge

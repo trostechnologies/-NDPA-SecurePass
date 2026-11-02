@@ -49,7 +49,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   // Form state for Create/Edit
   const [formName, setFormName] = useState<string>('');
   const [formEmail, setFormEmail] = useState<string>('');
-  const [formPassword, setFormPassword] = useState<string>('password123');
+  const [formPassword, setFormPassword] = useState<string>('');
   const [formRole, setFormRole] = useState<UserRole>('staff');
   const [formDepartment, setFormDepartment] = useState<string>('Corporate Services');
   const [formTitle, setFormTitle] = useState<string>('Executive Host');
@@ -73,7 +73,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
   const handleOpenCreate = () => {
     setFormName('');
     setFormEmail('');
-    setFormPassword('password123');
+    setFormPassword('');
     setFormRole('staff');
     setFormDepartment('Corporate Services');
     setFormTitle('Executive Host');
@@ -102,7 +102,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
       id: `USR-${Date.now()}`,
       name: formName.trim(),
       email: formEmail.trim().toLowerCase(),
-      password: formPassword || 'password123',
+      password: formPassword,
       role: formRole,
       department: formDepartment.trim(),
       title: formTitle.trim(),
@@ -425,6 +425,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <label className="block text-slate-300 font-medium mb-1">Password *</label>
                 <input
                   type="password"
+                  minLength={16}
+                  autoComplete="new-password"
                   required
                   value={formPassword}
                   onChange={(e) => setFormPassword(e.target.value)}

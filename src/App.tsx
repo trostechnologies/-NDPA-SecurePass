@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { api, jsonBody } from './api';
 import { Header } from './components/Header';
 import { VisitorKiosk } from './components/Kiosk/VisitorKiosk';
 import { LiveAccessLogs } from './components/Admin/LiveAccessLogs';
@@ -26,15 +27,7 @@ import {
   EmailNotification,
   AppUser,
 } from './types/visitor';
-import {
-  SAMPLE_HOSTS,
-  INITIAL_VISITORS,
-  INITIAL_INVITATIONS,
-  INITIAL_AUDIT_LOGS,
-  INITIAL_NOTIFICATIONS,
-  INITIAL_USERS,
-} from './data/mockInitialData';
-import { NDPA_ORGANIZATION_INFO, isRetentionExpired } from './utils/ndpaCompliance';
+import { NDPA_ORGANIZATION_INFO } from './utils/ndpaCompliance';
 import { CheckCircle2, AlertCircle, Smartphone, Lock, ShieldAlert } from 'lucide-react';
 
 export default function App() {
@@ -43,18 +36,33 @@ export default function App() {
     new URLSearchParams(window.location.search).get('mode') === 'mobile';
 
   // Authentication & RBAC State
-  const [users, setUsers] = useState<AppUser[]>(INITIAL_USERS);
-  const [currentUser, setCurrentUser] = useState<AppUser | null>(INITIAL_USERS[0]); // Default admin session for immediate full-featured evaluation
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
 
   const [activeTab, setActiveTab] = useState<AppTab>(
     isInitialMobile ? 'mobile' : 'kiosk'
   );
 
-  const [visitors, setVisitors] = useState<Visitor[]>(INITIAL_VISITORS);
-  const [hosts] = useState<HostEmployee[]>(SAMPLE_HOSTS);
-  const [invitations, setInvitations] = useState<PreRegistrationInvite[]>(INITIAL_INVITATIONS);
-  const [auditLogs, setAuditLogs] = useState<NDPAAuditLog[]>(INITIAL_AUDIT_LOGS);
-  const [notifications, setNotifications] = useState<EmailNotification[]>(INITIAL_NOTIFICATIONS);
+  const [visitors, setVisitors] = useState<Visitor[]>([]);
+  const [hosts,setHosts] = useState<HostEmployee[]>([]);
+  const [invitations, setInvitations] = useState<PreRegistrationInvite[]>([]);
+  const [auditLogs, setAuditLogs] = useState<NDPAAuditLog[]>([]);
+  const [notifications, setNotifications] = useState<EmailNotification[]>([]);
+
+  const [pendingInviteCode,setPendingInviteCode]=useState('');
+  const [startupError,setStartupError]=useState('');
+  const [ready,setReady] = useState(false);
+  const loadPrivate = async () => {
+    const all={visitors:[] as Visitor[],invitations:[] as PreRegistrationInvite[],auditLogs:[] as NDPAAuditLog[],users:[] as AppUser[]};
+    for(let offset=0;offset<1000000;offset+=500){
+      const page=await api<typeof all>(`/data?offset=${offset}`);
+      all.visitors.push(...page.visitors);all.invitations.push(...page.invitations);all.auditLogs.push(...page.auditLogs);if(!offset)all.users=page.users;
+      if(Math.max(page.visitors.length,page.invitations.length,page.auditLogs.length)<500)break;
+    }
+    setVisitors(all.visitors);setInvitations(all.invitations);setAuditLogs(all.auditLogs);setUsers(all.users);
+  };
+  useEffect(()=>{(async()=>{try{Object.assign(NDPA_ORGANIZATION_INFO,await api<Partial<typeof NDPA_ORGANIZATION_INFO>>('/config'));const publicHosts=await api<HostEmployee[]>('/hosts');setHosts(publicHosts);try{const session=await api<{user:AppUser}>('/session');setCurrentUser(session.user);await loadPrivate();}catch{setCurrentUser(null);}}catch(e){setStartupError('SecurePass is unavailable. Contact reception and retry later.');}finally{setReady(true);}})();},[]);
+  const run=async(task:()=>Promise<unknown>)=>{try{await task();}catch(e){triggerToast(e instanceof Error?e.message:'Operation failed');}};
 
   // Badge Modal State
   const [badgeVisitor, setBadgeVisitor] = useState<Visitor | null>(null);
@@ -79,319 +87,29 @@ export default function App() {
     setIsBadgeOpen(true);
   };
 
-  // Check-In Visitor Handler
-  const handleCheckInComplete = (newVisitor: Visitor, updatedInviteId?: string) => {
-    setVisitors((prev) => [newVisitor, ...prev]);
-
-    // If an invitation was redeemed, update its status
-    if (updatedInviteId) {
-      setInvitations((prev) =>
-        prev.map((inv) =>
-          inv.id === updatedInviteId ? { ...inv, status: 'checked_in' } : inv
-        )
-      );
-    }
-
-    // Record Immutable Audit Logs
-    const checkInAudit: NDPAAuditLog = {
-      id: `LOG-${Date.now()}-1`,
-      timestamp: new Date().toISOString(),
-      actor: 'Reception Self-Service Kiosk (Ground Floor)',
-      action: 'CHECK_IN',
-      details: `Visitor ${newVisitor.fullName} registered to meet ${newVisitor.hostEmployeeName} (${newVisitor.hostDepartment}). Lawful consent recorded.`,
-      visitorId: newVisitor.id,
-      lawfulBasis: 'NDPA 2023 Sec 25(1)(a) & Sec 26(1)',
-      complianceArticle: 'Lawfulness of Processing & Explicit Consent',
-    };
-
-    const biometricAudit: NDPAAuditLog = {
-      id: `LOG-${Date.now()}-2`,
-      timestamp: new Date().toISOString(),
-      actor: 'Visitor Kiosk Camera Module',
-      action: newVisitor.hasBiometricPhoto ? 'PHOTO_CAPTURED' : 'PHOTO_SKIPPED_VOLUNTARY',
-      details: newVisitor.hasBiometricPhoto
-        ? `Biometric facial photograph captured with explicit consent under Section 30.`
-        : `Visitor declined photographic capture. Voluntary opt-out honoured under Section 30(2).`,
-      visitorId: newVisitor.id,
-      lawfulBasis: 'NDPA 2023 Sec 30(1) & (2)',
-      complianceArticle: 'Sensitive Personal Data Governance',
-    };
-
-    setAuditLogs((prev) => [biometricAudit, checkInAudit, ...prev]);
-
-    // Dispatch Simulated Host Notification Email
-    const host = hosts.find((h) => h.id === newVisitor.hostEmployeeId) || hosts[0];
-    const newNotification: EmailNotification = {
-      id: `NOTIF-${Date.now()}`,
-      recipientEmail: host.email,
-      recipientName: host.name,
-      subject: `Visitor Arrival: ${newVisitor.fullName} is at Reception (${newVisitor.badgeId})`,
-      type: 'HOST_ARRIVAL_ALERT',
-      sentAt: new Date().toISOString(),
-      bodyPreview: `Dear ${host.name}, your visitor ${newVisitor.fullName} from ${newVisitor.organization} has completed NDPA access verification and is proceeding to ${host.floor} with Pass #${newVisitor.passCode}.`,
-      status: 'Delivered',
-    };
-
-    setNotifications((prev) => [newNotification, ...prev]);
-    triggerToast(`Check-in successful! Pass issued for ${newVisitor.fullName}. Notification sent to host.`);
+  // All writes are authorized and persisted by the backend; never trust browser state.
+  const handleCheckInComplete = async (visitor: Visitor, inviteCode?: string): Promise<Visitor> => {
+    const saved=await api<Visitor>('/checkin',{method:'POST',body:jsonBody({...visitor,inviteCode,noticeVersion:NDPA_ORGANIZATION_INFO.noticeVersion})});
+    // Public check-in must not add private directory data to the anonymous UI.
+    if(currentUser?.role==='admin')setVisitors(v=>[saved,...v]);
+    triggerToast('Visitor registered.');return saved;
   };
-
-  // Check-Out Visitor Handler
-  const handleCheckOut = (visitorId: string) => {
-    const target = visitors.find((v) => v.id === visitorId);
-    if (!target) return;
-
-    const checkOutTimestamp = new Date().toISOString();
-
-    setVisitors((prev) =>
-      prev.map((v) =>
-        v.id === visitorId
-          ? { ...v, status: 'checked_out', checkOutTime: checkOutTimestamp }
-          : v
-      )
-    );
-
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: checkOutTimestamp,
-      actor: 'Reception Turnstile Gate Control',
-      action: 'CHECK_OUT',
-      details: `Visitor ${target.fullName} checked out. Physical access ended.`,
-      visitorId: target.id,
-      lawfulBasis: 'NDPA 2023 Sec 24(1)(d)',
-      complianceArticle: 'Purpose Limitation & Storage Lifecycle',
-    };
-
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`Visitor ${target.fullName} successfully checked out.`);
-  };
-
-  // Right to Erasure / Right to be Forgotten (NDPA Section 37)
-  const handleErasureRequest = (visitorId: string) => {
-    const target = visitors.find((v) => v.id === visitorId);
-    if (!target) return;
-
-    setVisitors((prev) =>
-      prev.map((v) =>
-        v.id === visitorId
-          ? {
-              ...v,
-              fullName: '[DATA SUBJECT REDACTED - NDPA SEC 37]',
-              email: 'redacted@privacy.zenithholdings.ng',
-              phone: '+234 ••• ••• ••••',
-              organization: '[REDACTED PER RIGHT TO ERASURE]',
-              vehiclePlate: undefined,
-              governmentIdNumberMasked: undefined,
-              emergencyContactName: undefined,
-              emergencyContactPhone: undefined,
-              hasBiometricPhoto: false,
-              photoUrl: undefined,
-              isAnonymized: true,
-              notes: `Personal details redacted upon verified Data Subject Request on ${new Date().toISOString().split('T')[0]}.`,
-            }
-          : v
-      )
-    );
-
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: 'DPO Executive Console',
-      action: 'RIGHT_TO_ERASURE',
-      details: `Executed permanent cryptographic anonymization on visitor record ${target.passCode} pursuant to NDPA Section 37.`,
-      visitorId: target.id,
-      lawfulBasis: 'NDPA 2023 Sec 37(1)',
-      complianceArticle: 'Right to Erasure / Right to be Forgotten',
-    };
-
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`Personal data for ${target.passCode} has been permanently anonymized per NDPA Sec 37.`);
-  };
-
-  // Automated Retention Purge (NDPA Section 24(1)(d))
-  const handleExecuteRetentionPurge = () => {
-    const expiredList = visitors.filter((v) => isRetentionExpired(v.retentionExpiryDate));
-    if (expiredList.length === 0) {
-      triggerToast('No records are currently overdue for retention purge.');
-      return;
-    }
-
-    setVisitors((prev) =>
-      prev.map((v) => {
-        if (isRetentionExpired(v.retentionExpiryDate) && !v.isAnonymized) {
-          return {
-            ...v,
-            fullName: '[DATA SUBJECT PURGED - 60D RETENTION]',
-            email: 'purged@retention.zenithholdings.ng',
-            phone: '+234 ••• ••• ••••',
-            organization: '[ARCHIVED - PURGED]',
-            hasBiometricPhoto: false,
-            photoUrl: undefined,
-            isAnonymized: true,
-            notes: `Auto-purged on ${new Date().toISOString().split('T')[0]} following statutory 60-day storage limitation.`,
-          };
-        }
-        return v;
-      })
-    );
-
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: 'Automated NDPA Lifecycle Daemon',
-      action: 'RETENTION_PURGE',
-      details: `Purged ${expiredList.length} visitor record(s) exceeding the mandatory ${NDPA_ORGANIZATION_INFO.dataRetentionDays}-day retention threshold.`,
-      lawfulBasis: 'NDPA 2023 Sec 24(1)(d)',
-      complianceArticle: 'Storage Limitation & Data Minimization',
-    };
-
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`Automated purge executed: ${expiredList.length} expired record(s) permanently redacted.`);
-  };
-
-  // Create Pre-registration Invitation
-  const handleCreateInvite = (newInvite: PreRegistrationInvite) => {
-    setInvitations((prev) => [newInvite, ...prev]);
-
-    // Send email notification to guest
-    const guestNotification: EmailNotification = {
-      id: `NOTIF-${Date.now()}`,
-      recipientEmail: newInvite.guestEmail,
-      recipientName: newInvite.guestName,
-      subject: `Corporate Access Pass: ${newInvite.guestName} at Zenith Holdings VI Tower`,
-      type: 'GUEST_INVITE',
-      sentAt: new Date().toISOString(),
-      bodyPreview: `Dear ${newInvite.guestName}, you are invited to Zenith Holdings Corporate Tower by ${newInvite.hostEmployeeName} (${newInvite.hostDepartment}) on ${newInvite.expectedDate} at ${newInvite.expectedTime}. Your expedited check-in code is ${newInvite.inviteCode}.`,
-      status: 'Delivered',
-    };
-
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: `${newInvite.hostEmployeeName} (Host)`,
-      action: 'INVITE_SENT',
-      details: `Generated pre-registration pass ${newInvite.inviteCode} for ${newInvite.guestName} (${newInvite.guestOrganization}).`,
-      lawfulBasis: 'NDPA 2023 Sec 25(1)(b)',
-      complianceArticle: 'Legitimate Interests & Invitation Scheduling',
-    };
-
-    setNotifications((prev) => [guestNotification, ...prev]);
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`Invitation sent to ${newInvite.guestName}! Invite code: ${newInvite.inviteCode}`);
-  };
+  const handleCheckOut = (id:string) => {void run(async()=>{const saved=await api<Visitor>(`/visitors/${encodeURIComponent(id)}/checkout`,{method:'PATCH'});setVisitors(v=>v.map(x=>x.id===id?saved:x));triggerToast('Checkout saved.');});};
+  const handleErasureRequest = (id:string) => {void run(async()=>{await api(`/visitors/${encodeURIComponent(id)}/erase`,{method:'POST'});setVisitors(v=>v.filter(x=>x.id!==id));triggerToast('Primary record removed; review backup policy.');});};
+  const handleExecuteRetentionPurge = () => {void run(async()=>{await api('/purge',{method:'POST'});await loadPrivate();triggerToast('Retention job completed against primary database.');});};
+  const handleCreateInvite = async (invite:PreRegistrationInvite):Promise<PreRegistrationInvite> => {const saved=await api<PreRegistrationInvite>('/invitations',{method:'POST',body:jsonBody(invite)});setInvitations(v=>[saved,...v]);triggerToast('Invitation saved. Email delivery is not configured.');return saved;};
 
   // Quick Check-in from Invitation code
-  const handleQuickCheckInFromInvite = () => {
-    setActiveTab('kiosk');
-  };
+  const handleQuickCheckInFromInvite = (code:string) => { setPendingInviteCode(code);setActiveTab('kiosk'); };
 
-  // Test notification dispatcher
-  const handleSendTestNotification = () => {
-    const randomHost = hosts[Math.floor(Math.random() * hosts.length)];
-    const testNotif: EmailNotification = {
-      id: `NOTIF-${Date.now()}`,
-      recipientEmail: randomHost.email,
-      recipientName: randomHost.name,
-      subject: `Simulated Alert: VIP Delegation scheduled with ${randomHost.name}`,
-      type: 'HOST_ARRIVAL_ALERT',
-      sentAt: new Date().toISOString(),
-      bodyPreview: `Test verification dispatch: SecurePass enterprise notification bridge is fully operational and delivering real-time alerts.`,
-      status: 'Delivered',
-    };
+  const handleSendTestNotification = () => triggerToast('Email provider is not configured; no message was sent.');
 
-    setNotifications((prev) => [testNotif, ...prev]);
-    triggerToast(`Test arrival alert dispatched to ${randomHost.name}.`);
-  };
-
-  // Auth Handlers
-  const handleLoginSuccess = (user: AppUser) => {
-    setCurrentUser(user);
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: `${user.name} (${user.role.toUpperCase()})`,
-      action: 'USER_LOGIN',
-      details: `User authenticated successfully. Role: ${user.role.toUpperCase()}, Department: ${user.department}.`,
-      lawfulBasis: 'NDPA 2023 Sec 39(1)',
-      complianceArticle: 'Access Authentication & Session Management',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-
-    if (user.role === 'staff') {
-      setActiveTab('invitations');
-      triggerToast(`Welcome ${user.name}! Staff access granted to Guest Invitations.`);
-    } else {
-      setActiveTab('access_logs');
-      triggerToast(`Welcome Administrator ${user.name}! Full access granted.`);
-    }
-  };
-
-  const handleLogout = () => {
-    const prevName = currentUser?.name || 'User';
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: prevName,
-      action: 'USER_LOGOUT',
-      details: `User terminated authentication session.`,
-      lawfulBasis: 'NDPA 2023 Sec 39(1)',
-      complianceArticle: 'Session Revocation',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-    setCurrentUser(null);
-    setActiveTab('kiosk');
-    triggerToast('Signed out successfully.');
-  };
-
-  // User Profile Management Handlers (Admin)
-  const handleCreateUser = (newUser: AppUser) => {
-    setUsers((prev) => [newUser, ...prev]);
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: `${currentUser?.name || 'Administrator'} (${currentUser?.role || 'admin'})`,
-      action: 'USER_CREATED',
-      details: `Created new user profile ${newUser.name} (${newUser.email}). Role assigned: ${newUser.role.toUpperCase()} (${newUser.role === 'admin' ? 'Full Access' : 'Guest Invitations Only'}).`,
-      lawfulBasis: 'NDPA 2023 Sec 39(1)',
-      complianceArticle: 'Technical & Organizational Security Measures',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`User profile created for ${newUser.name} (${newUser.role.toUpperCase()}).`);
-  };
-
-  const handleUpdateUser = (updatedUser: AppUser) => {
-    setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
-    if (currentUser && currentUser.id === updatedUser.id) {
-      setCurrentUser(updatedUser);
-    }
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: `${currentUser?.name || 'Administrator'} (${currentUser?.role || 'admin'})`,
-      action: 'USER_UPDATED',
-      details: `Updated user profile ${updatedUser.name} (${updatedUser.email}). Role: ${updatedUser.role}, Status: ${updatedUser.status}.`,
-      lawfulBasis: 'NDPA 2023 Sec 39(1)',
-      complianceArticle: 'Identity Management Governance',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`User profile for ${updatedUser.name} updated.`);
-  };
-
-  const handleDeleteUser = (userId: string) => {
-    const target = users.find((u) => u.id === userId);
-    setUsers((prev) => prev.filter((u) => u.id !== userId));
-    const log: NDPAAuditLog = {
-      id: `LOG-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actor: `${currentUser?.name || 'Administrator'} (${currentUser?.role || 'admin'})`,
-      action: 'USER_DELETED',
-      details: `Deleted user profile ${target?.name || userId} (${target?.email || ''}) and revoked access tokens.`,
-      lawfulBasis: 'NDPA 2023 Sec 39(1)',
-      complianceArticle: 'Revocation of Privileged Credentials',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-    triggerToast(`User profile deleted successfully.`);
-  };
+  // Auth state is derived only from a server-validated session.
+  const handleLoginSuccess = (user:AppUser)=>{setCurrentUser(user);void run(loadPrivate);setActiveTab(user.role==='admin'?'access_logs':'invitations');};
+  const handleLogout = ()=>{void run(async()=>{await api('/logout',{method:'POST'});setCurrentUser(null);setUsers([]);setVisitors([]);setInvitations([]);setAuditLogs([]);setActiveTab('kiosk');});};
+  const handleCreateUser = (user:AppUser)=>{void run(async()=>{const saved=await api<AppUser>('/users',{method:'POST',body:jsonBody(user)});setUsers(v=>[saved,...v]);setHosts(await api<HostEmployee[]>('/hosts'));triggerToast('User created.');});};
+  const handleUpdateUser = (user:AppUser)=>{void run(async()=>{const saved=await api<AppUser>(`/users/${encodeURIComponent(user.id)}`,{method:'PATCH',body:jsonBody(user)});setUsers(v=>v.map(x=>x.id===saved.id?saved:x));setHosts(await api<HostEmployee[]>('/hosts'));triggerToast('User updated.');});};
+  const handleDeleteUser = (id:string)=>{void run(async()=>{await api(`/users/${encodeURIComponent(id)}`,{method:'DELETE'});setUsers(v=>v.filter(x=>x.id!==id));setHosts(await api<HostEmployee[]>('/hosts'));triggerToast('User deleted; sessions revoked.');});};
 
   // RBAC Permission Check
   const isStaffRestricted =
@@ -401,6 +119,9 @@ export default function App() {
   const isUnauthenticatedRestricted =
     !currentUser &&
     ['access_logs', 'compliance', 'muster', 'users', 'invitations'].includes(activeTab);
+
+  if(startupError)return <div role="alert" className="p-8 bg-slate-950 text-red-200 min-h-screen">{startupError}</div>;
+  if (!ready) return <div className="p-8 text-slate-200 bg-slate-950 min-h-screen">Connecting to SecurePass…</div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -520,6 +241,7 @@ export default function App() {
               invitations={invitations}
               onCheckInComplete={handleCheckInComplete}
               onOpenBadge={handleOpenBadge}
+              initialInviteCode={pendingInviteCode}
             />
           </div>
         )}
@@ -567,7 +289,7 @@ export default function App() {
         {activeTab === 'invitations' && !isUnauthenticatedRestricted && (
           <PreRegistrationManager
             invitations={invitations}
-            hosts={hosts}
+            hosts={currentUser?.role==='staff'?hosts.filter(h=>h.userId===currentUser.id):hosts}
             onCreateInvite={handleCreateInvite}
             onQuickCheckIn={handleQuickCheckInFromInvite}
           />
@@ -613,27 +335,13 @@ export default function App() {
             </span>{' '}
             · {NDPA_ORGANIZATION_INFO.facilityName}
             <div className="text-[11px] text-slate-600 mt-0.5">
-              Supervised under the Nigeria Data Protection Act (NDPA 2023) · NDPC Controller License: {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+              Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[11px]">
-            <a
-              href="/SecurePass_NDPA_PRD.pdf"
-              download="SecurePass_NDPA_PRD.pdf"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-emerald-400 hover:text-emerald-300 font-semibold transition-colors flex items-center gap-1"
-            >
-              PRD Document (.pdf)
-            </a>
+
             <span aria-hidden="true" className="text-slate-700">·</span>
-            <a
-              href="/SecurePass_NDPA_PRD.docx"
-              download="SecurePass_NDPA_PRD.docx"
-              className="text-slate-400 hover:text-slate-300 transition-colors"
-            >
-              Word (.docx)
-            </a>
+
             <span aria-hidden="true" className="text-slate-700">·</span>
             <span>DPO: {NDPA_ORGANIZATION_INFO.dpoName}</span>
             <span aria-hidden="true" className="text-slate-700">·</span>

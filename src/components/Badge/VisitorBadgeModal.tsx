@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { badgeReference } from '../../utils/security';
 import QRCode from 'qrcode';
 import { Visitor } from '../../types/visitor';
 import { Printer, Download, X, ShieldCheck, Wifi, UserCheck, Calendar, Clock, Building2 } from 'lucide-react';
@@ -19,16 +20,10 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   useEffect(() => {
+    let active=true;
+    setQrDataUrl('');
     if (visitor) {
-      const payload = JSON.stringify({
-        v: 'NDPA-2023',
-        code: visitor.passCode,
-        id: visitor.badgeId,
-        name: visitor.fullName,
-        host: visitor.hostEmployeeName,
-        time: visitor.checkInTime,
-        clearance: visitor.securityClearance,
-      });
+      const payload = badgeReference(visitor); // Not an access credential; scanner verification is pending.
 
       QRCode.toDataURL(payload, {
         width: 140,
@@ -38,9 +33,10 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
           light: '#ffffff',
         },
       })
-        .then(url => setQrDataUrl(url))
+        .then(url => {if(active)setQrDataUrl(url);})
         .catch(err => console.error('QR code generation error:', err));
     }
+    return ()=>{active=false;};
   }, [visitor]);
 
   if (!isOpen || !visitor) return null;
@@ -50,7 +46,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
   };
 
   const handleDownload = () => {
-    const jsonStr = JSON.stringify(visitor, null, 2);
+    const jsonStr = JSON.stringify({badgeId: visitor.badgeId, passCode: visitor.passCode}, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -108,7 +104,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
                 </div>
                 <div className="text-right">
                   <div className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    NDPA VERIFIED
+                    VISITOR PASS
                   </div>
                   <div className="text-[9px] text-slate-400 mt-0.5 font-mono">
                     {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
@@ -140,7 +136,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
                     <div className="flex flex-col items-center justify-center text-slate-400 h-full">
                       <UserCheck className="w-8 h-8 text-slate-400 mb-1" />
                       <span className="text-[8px] font-medium leading-tight text-slate-500">
-                        {visitor.biometricConsentGranted ? 'NO PHOTO' : 'NDPA SEC 30 OPT-OUT'}
+                        {visitor.biometricConsentGranted ? 'NO PHOTO' : 'PHOTO DISABLED'}
                       </span>
                     </div>
                   )}
@@ -213,7 +209,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({ visitor, i
                       QR Code
                     </div>
                   )}
-                  <span className="text-[8px] font-mono text-slate-400 mt-0.5">SCAN FOR EXIT</span>
+                  <span className="text-[8px] font-mono text-slate-400 mt-0.5">VISIT REFERENCE</span>
                 </div>
               </div>
 

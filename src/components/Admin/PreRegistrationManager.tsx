@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import QRCode from 'qrcode';
 import { PreRegistrationInvite, HostEmployee } from '../../types/visitor';
 import {
@@ -23,7 +23,7 @@ import {
 interface PreRegistrationManagerProps {
   invitations: PreRegistrationInvite[];
   hosts: HostEmployee[];
-  onCreateInvite: (newInvite: PreRegistrationInvite) => void;
+  onCreateInvite: (newInvite: PreRegistrationInvite) => Promise<PreRegistrationInvite>;
   onQuickCheckIn: (inviteCode: string) => void;
 }
 
@@ -33,6 +33,9 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
   onCreateInvite,
   onQuickCheckIn,
 }) => {
+  const submitting=useRef(false);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState('');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -80,7 +83,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
     }
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!guestName || !guestEmail) {
       alert('Please provide guest name and email.');
@@ -88,6 +91,9 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
     }
 
     const host = hosts.find(h => h.id === hostId) || hosts[0];
+    if(!host){setError('No host is configured for your account. Contact an administrator.');return;}
+    if(submitting.current)return;submitting.current=true;setBusy(true);setError('');
+    try {
     const newCode = `INV-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const newInvite: PreRegistrationInvite = {
@@ -109,7 +115,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
       parkingReserved,
     };
 
-    onCreateInvite(newInvite);
+    await onCreateInvite(newInvite);
     setIsModalOpen(false);
 
     // Reset Form
@@ -117,10 +123,13 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
     setGuestEmail('');
     setGuestPhone('');
     setGuestOrg('');
+    }catch(e){setError(e instanceof Error?e.message:'Invitation could not be saved');}
+    finally{submitting.current=false;setBusy(false);}
   };
 
   return (
     <div className="space-y-6">
+      {error&&<p role="alert" className="text-red-300">{error}</p>}
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-lg">
         <div>
@@ -132,8 +141,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
             Invite-Only Pre-Registration Hub
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-xl">
-            Pre-register high-value guests and partners in advance. Dispatches an automated email invitation
-            with a secure QR code for accelerated front desk check-in.
+            Save guest invitations for reception. Share the generated code manually; email delivery is not configured.
           </p>
         </div>
 
@@ -401,9 +409,10 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={busy}
                   className="px-5 py-2.5 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold rounded-xl flex items-center gap-1.5 shadow-sm"
                 >
-                  <Send className="w-3.5 h-3.5" /> Dispatch Invitation Email
+                  <Send className="w-3.5 h-3.5" /> Save Invitation
                 </button>
               </div>
             </form>
