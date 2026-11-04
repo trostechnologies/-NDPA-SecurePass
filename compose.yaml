@@ -4,6 +4,7 @@ x-app-environment: &app-environment
   SECUREPASS_DEPLOYMENT_MODE: ${SECUREPASS_DEPLOYMENT_MODE:-isolated}
   SECUREPASS_SITES_FILE: /run/secrets/sites
   SECUREPASS_SECRETS_FILE: /run/secrets/credentials
+  SECUREPASS_DATABASE_FILE: /run/secrets/database
   SECUREPASS_GATE_DEVICES_FILE: /run/secrets/gates
   SECUREPASS_GATE_ENABLED: ${SECUREPASS_GATE_ENABLED:-false}
   SECUREPASS_COOKIE_SECURE: 'true'
@@ -37,9 +38,9 @@ services:
     security_opt: ['no-new-privileges:true']
     tmpfs: ['/tmp:rw,noexec,nosuid,size=64m']
     environment: *app-environment
-    secrets: [credentials, sites, gates]
+    secrets: [credentials, sites, gates, database]
     volumes: ['app-data:/data', 'privacy-journal:/privacy-journal', 'backups:/backups']
-    networks: [backend]
+    networks: [backend, edge]
     depends_on:
       init-volumes: { condition: service_completed_successfully }
     logging:
@@ -74,9 +75,9 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
-    network_mode: none
+    networks: [backend, edge]
     environment: *app-environment
-    secrets: [credentials, sites, gates]
+    secrets: [credentials, sites, gates, database]
     command: ['node', 'ops/backup-loop.mjs']
     volumes: ['app-data:/data:ro', 'privacy-journal:/privacy-journal:ro', 'backups:/backups']
     depends_on:
@@ -86,6 +87,7 @@ services:
       options: { max-size: '10m', max-file: '5' }
 
 secrets:
+  database: { file: '${SECUREPASS_PRIVATE_DIR:-./.private}/database.json' }
   credentials: { file: '${SECUREPASS_PRIVATE_DIR:-./.private}/secrets.json' }
   sites: { file: '${SECUREPASS_PRIVATE_DIR:-./.private}/sites.json' }
   gates: { file: '${SECUREPASS_PRIVATE_DIR:-./.private}/gate-devices.json' }

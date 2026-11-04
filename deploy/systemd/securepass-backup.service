@@ -1,0 +1,19 @@
+[Unit]
+Description=SecurePass encrypted snapshot and independent expiry cleanup
+Wants=network-online.target
+After=network-online.target securepass.service
+
+[Service]
+Type=oneshot
+User=securepass
+Group=securepass
+WorkingDirectory=/opt/securepass
+EnvironmentFile=/etc/securepass/runtime.env
+ExecStart=/usr/bin/node /opt/securepass/ops/backup-once.mjs
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/securepass-state /var/lib/securepass-journal /var/lib/securepass-backups /var/lib/securepass-audit-archives
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

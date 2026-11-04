@@ -1,25 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import { text } from './auth.mjs';
 import { openPrivacyRecord } from './crypto.mjs';
-
 const reference = (x) => typeof x === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._/-]{2,79}$/.test(x);
 export function registerPrivacy(app, config, store, { auth, admin, recent }) {
   const { db, keys, dir, scoped, tx, audit, get, list, remove, held } = store;
-  const find = (s, id) => {
-    const r = db
+  const find = async (s, id) => {
+    const r = await db
       .prepare('SELECT * FROM privacy_requests WHERE id=? AND tenant_id=? AND site_id=?')
       .get(id, ...scoped(s));
     if (!r) return null;
     openPrivacyRecord(keys, r);
     return r;
   };
-  const setStatus = (s, r, status) => {
+  const setStatus = async (s, r, status) => {
     const body = keys.open(r.cipher, `privacy:${s.scopeId}:${r.id}`);
-    db.prepare('UPDATE privacy_requests SET status=?,cipher=? WHERE id=?').run(
-      status,
-      keys.seal({ ...body, status }, `privacy:${s.scopeId}:${r.id}`),
-      r.id,
-    );
+    await db
+      .prepare('UPDATE privacy_requests SET status=?,cipher=? WHERE id=?')
+      .run(status, keys.seal({ ...body, status }, `privacy:${s.scopeId}:${r.id}`), r.id);
   };
   const requestBody = (s, r) => ({
     ...keys.open(r.cipher, `privacy:${s.scopeId}:${r.id}`),
@@ -31,18 +28,24 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
     verifiedBy: r.verified_by,
     createdAt: r.created_at,
   });
-  function erase(scope, actor, r) {
-    const visitor = get(scope, 'visitors', r.visitor_id);
+  async function erase(scope, actor, r) {
+    const visitor = await get(scope, 'visitors', r.visitor_id);
     if (!visitor) throw Object.assign(Error('Visitor no longer available'), { status: 409 });
     const subjectHash = keys.blind(scope.scopeId, visitor.email);
-    if (held(scope, subjectHash))
+    if (await held(scope, subjectHash))
       throw Object.assign(Error('Subject has an active legal hold'), { status: 409 });
-    const records = ['visitors', 'invitations'].flatMap((kind) =>
-      list(scope, kind, { email: visitor.email, limit: config.maxRecords }).map((v) => ({
-        kind,
-        id: v.id,
-      })),
-    );
+    const records = (
+      await Promise.all(
+        ['visitors', 'invitations'].map(async (kind) =>
+          (await list(scope, kind, { email: visitor.email, limit: config.maxRecords })).map(
+            (v) => ({
+              kind,
+              id: v.id,
+            }),
+          ),
+        ),
+      )
+    ).flat();
     const verified = keys.open(r.cipher, `privacy:${scope.scopeId}:${r.id}`);
     const body = {
       version: 1,
@@ -68,17 +71,19 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
     // The independent signed journal is written and fsynced BEFORE deletion. If the
     // DB transaction fails, approved erasure intent remains authoritative on restore.
     const receipt = store.journal.append(body);
-    for (const entry of records) remove(scope, entry.kind, entry.id);
-    db.prepare('INSERT INTO erasures VALUES (?,?,?,?,?,?,?)').run(
-      body.id,
-      ...scoped(scope),
-      subjectHash,
-      JSON.stringify(records),
-      body.at,
-      JSON.stringify(receipt),
-    );
-    setStatus(scope, r, 'fulfilled');
-    audit(
+    for (const entry of records) await remove(scope, entry.kind, entry.id);
+    await db
+      .prepare('INSERT INTO erasures VALUES (?,?,?,?,?,?,?)')
+      .run(
+        body.id,
+        ...scoped(scope),
+        subjectHash,
+        JSON.stringify(records),
+        body.at,
+        JSON.stringify(receipt),
+      );
+    await setStatus(scope, r, 'fulfilled');
+    await audit(
       scope,
       actor,
       'VERIFIED_ERASURE',
@@ -87,27 +92,30 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
     );
     return receipt;
   }
-  app.get('/api/privacy', auth, admin, (req, res) => {
+  app.get('/api/privacy', auth, admin, async (req, res) => {
     res.json({
-      requests: db
-        .prepare(
-          'SELECT * FROM privacy_requests WHERE tenant_id=? AND site_id=? ORDER BY created_at DESC LIMIT 200',
-        )
-        .all(...scoped(req.scope))
-        .map((r) => requestBody(req.scope, find(req.scope, r.id))),
-      holds: db
+      requests: await Promise.all(
+        (
+          await db
+            .prepare(
+              'SELECT * FROM privacy_requests WHERE tenant_id=? AND site_id=? ORDER BY created_at DESC LIMIT 200',
+            )
+            .all(...scoped(req.scope))
+        ).map(async (r) => requestBody(req.scope, await find(req.scope, r.id))),
+      ),
+      holds: await db
         .prepare(
           'SELECT id,case_ref,created_by,created_at,released_at FROM legal_holds WHERE tenant_id=? AND site_id=? ORDER BY created_at DESC LIMIT 200',
         )
         .all(...scoped(req.scope)),
     });
   });
-  app.post('/api/privacy/requests', auth, admin, recent, (req, res) => {
+  app.post('/api/privacy/requests', auth, admin, recent, async (req, res) => {
     const x = req.body || {};
     if (
       !['access', 'erase'].includes(x.type) ||
       !text(x.visitorId, 100, true) ||
-      !get(req.scope, 'visitors', x.visitorId)
+      !(await get(req.scope, 'visitors', x.visitorId))
     )
       return res.status(400).json({ error: 'Valid visitor and request type required' });
     const id = randomUUID(),
@@ -120,24 +128,26 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
         verifiedBy: null,
         status: 'pending',
       };
-    tx(() => {
-      db.prepare('INSERT INTO privacy_requests VALUES (?,?,?,?,?,?,?,?,?,?)').run(
-        id,
-        ...scoped(req.scope),
-        x.visitorId,
-        x.type,
-        'pending',
-        req.user.id,
-        null,
-        keys.seal(body, `privacy:${req.scope.scopeId}:${id}`),
-        new Date().toISOString(),
-      );
-      audit(req.scope, req.user.id, 'PRIVACY_REQUEST_CREATED', id, x.type);
+    await tx(async () => {
+      await db
+        .prepare('INSERT INTO privacy_requests VALUES (?,?,?,?,?,?,?,?,?,?)')
+        .run(
+          id,
+          ...scoped(req.scope),
+          x.visitorId,
+          x.type,
+          'pending',
+          req.user.id,
+          null,
+          keys.seal(body, `privacy:${req.scope.scopeId}:${id}`),
+          new Date().toISOString(),
+        );
+      await audit(req.scope, req.user.id, 'PRIVACY_REQUEST_CREATED', id, x.type);
     });
-    res.status(201).json(requestBody(req.scope, find(req.scope, id)));
+    res.status(201).json(requestBody(req.scope, await find(req.scope, id)));
   });
-  app.post('/api/privacy/requests/:id/verify', auth, admin, recent, (req, res) => {
-    const r = find(req.scope, req.params.id),
+  app.post('/api/privacy/requests/:id/verify', auth, admin, recent, async (req, res) => {
+    const r = await find(req.scope, req.params.id),
       x = req.body || {};
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.status !== 'pending' || r.requested_by === req.user.id)
@@ -151,7 +161,7 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
       return res
         .status(400)
         .json({ error: 'Identity-verification method and non-sensitive case reference required' });
-    tx(() => {
+    await tx(async () => {
       const body = {
         ...keys.open(r.cipher, `privacy:${req.scope.scopeId}:${r.id}`),
         verificationReference: x.verificationReference,
@@ -160,10 +170,10 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
         verifiedBy: req.user.id,
         status: 'verified',
       };
-      db.prepare(
-        "UPDATE privacy_requests SET status='verified',verified_by=?,cipher=? WHERE id=?",
-      ).run(req.user.id, keys.seal(body, `privacy:${req.scope.scopeId}:${r.id}`), r.id);
-      audit(
+      await db
+        .prepare("UPDATE privacy_requests SET status='verified',verified_by=?,cipher=? WHERE id=?")
+        .run(req.user.id, keys.seal(body, `privacy:${req.scope.scopeId}:${r.id}`), r.id);
+      await audit(
         req.scope,
         req.user.id,
         'PRIVACY_IDENTITY_VERIFIED',
@@ -171,64 +181,68 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
         'Independent approval recorded; external evidence retained in controller case system',
       );
     });
-    res.json(requestBody(req.scope, find(req.scope, r.id)));
+    res.json(requestBody(req.scope, await find(req.scope, r.id)));
   });
-  app.get('/api/privacy/requests/:id/export', auth, admin, recent, (req, res) => {
-    const r = find(req.scope, req.params.id);
+  app.get('/api/privacy/requests/:id/export', auth, admin, recent, async (req, res) => {
+    const r = await find(req.scope, req.params.id);
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.type !== 'access' || !['verified', 'fulfilled'].includes(r.status))
       return res.status(409).json({ error: 'Verified access request required' });
-    const v = get(req.scope, 'visitors', r.visitor_id);
+    const v = await get(req.scope, 'visitors', r.visitor_id);
     if (!v) return res.status(410).json({ error: 'Data no longer available' });
     const output = {
       request: requestBody(req.scope, r),
       controller: req.scope.companyName,
       site: req.scope.facilityName,
       generatedAt: new Date().toISOString(),
-      visitors: list(req.scope, 'visitors', { email: v.email, limit: config.maxRecords }),
-      invitations: list(req.scope, 'invitations', { email: v.email, limit: config.maxRecords }),
-      notices: db
-        .prepare('SELECT version,cipher FROM notice_versions WHERE tenant_id=? AND site_id=?')
-        .all(...scoped(req.scope))
-        .map((n) => ({
-          version: n.version,
-          ...keys.open(n.cipher, `notice:${req.scope.scopeId}:${n.version}`),
-        })),
+      visitors: await list(req.scope, 'visitors', { email: v.email, limit: config.maxRecords }),
+      invitations: await list(req.scope, 'invitations', {
+        email: v.email,
+        limit: config.maxRecords,
+      }),
+      notices: (
+        await db
+          .prepare('SELECT version,cipher FROM notice_versions WHERE tenant_id=? AND site_id=?')
+          .all(...scoped(req.scope))
+      ).map((n) => ({
+        version: n.version,
+        ...keys.open(n.cipher, `notice:${req.scope.scopeId}:${n.version}`),
+      })),
       notice: 'Controller-approved disclosure; this application does not certify legal compliance',
     };
-    tx(() => {
-      setStatus(req.scope, r, 'fulfilled');
-      audit(req.scope, req.user.id, 'VERIFIED_ACCESS_EXPORT', r.id);
+    await tx(async () => {
+      await setStatus(req.scope, r, 'fulfilled');
+      await audit(req.scope, req.user.id, 'VERIFIED_ACCESS_EXPORT', r.id);
     });
     res.setHeader('Content-Disposition', `attachment; filename="privacy-request-${r.id}.json"`);
     res.json(output);
   });
-  app.post('/api/privacy/requests/:id/fulfill', auth, admin, recent, (req, res) => {
-    const r = find(req.scope, req.params.id);
+  app.post('/api/privacy/requests/:id/fulfill', auth, admin, recent, async (req, res) => {
+    const r = await find(req.scope, req.params.id);
     if (!r) return res.status(404).json({ error: 'Not found' });
     if (r.type !== 'erase' || r.status !== 'verified')
       return res.status(409).json({ error: 'Independently verified erasure request required' });
-    const receipt = tx(() => erase(req.scope, req.user.id, r));
+    const receipt = await tx(async () => await erase(req.scope, req.user.id, r));
     res.json({ ok: true, receipt });
   });
   // Legacy endpoint now refuses unverified one-click deletion.
-  app.post('/api/visitors/:id/erase', auth, admin, recent, (req, res) => {
-    const r = text(req.body?.requestId, 100, true) && find(req.scope, req.body.requestId);
+  app.post('/api/visitors/:id/erase', auth, admin, recent, async (req, res) => {
+    const r = text(req.body?.requestId, 100, true) && (await find(req.scope, req.body.requestId));
     if (!r || r.visitor_id !== req.params.id || r.type !== 'erase' || r.status !== 'verified')
       return res
         .status(409)
         .json({ error: 'Create and independently verify an erasure request before deletion' });
-    res.json({ ok: true, receipt: tx(() => erase(req.scope, req.user.id, r)) });
+    res.json({ ok: true, receipt: await tx(async () => await erase(req.scope, req.user.id, r)) });
   });
-  app.post('/api/privacy/holds', auth, admin, recent, (req, res) => {
+  app.post('/api/privacy/holds', auth, admin, recent, async (req, res) => {
     const x = req.body || {},
-      v = get(req.scope, 'visitors', x.visitorId || '');
+      v = await get(req.scope, 'visitors', x.visitorId || '');
     if (!v || !reference(x.caseReference))
       return res
         .status(400)
         .json({ error: 'Visitor and non-sensitive legal case reference required' });
     const id = randomUUID();
-    tx(() => {
+    await tx(async () => {
       const at = new Date().toISOString(),
         subjectHash = keys.blind(req.scope.scopeId, v.email);
       store.journal.append({
@@ -244,33 +258,26 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
         at,
         records: [],
       });
-      db.prepare('INSERT INTO legal_holds VALUES (?,?,?,?,?,?,?,NULL)').run(
-        id,
-        ...scoped(req.scope),
-        subjectHash,
-        x.caseReference,
-        req.user.id,
-        at,
-      );
-      audit(req.scope, req.user.id, 'LEGAL_HOLD_CREATED', id);
+      await db
+        .prepare('INSERT INTO legal_holds VALUES (?,?,?,?,?,?,?,NULL)')
+        .run(id, ...scoped(req.scope), subjectHash, x.caseReference, req.user.id, at);
+      await audit(req.scope, req.user.id, 'LEGAL_HOLD_CREATED', id);
     });
     res.status(201).json({ id });
   });
-  app.post('/api/privacy/holds/:id/release', auth, admin, recent, (req, res) => {
-    const h = db
+  app.post('/api/privacy/holds/:id/release', auth, admin, recent, async (req, res) => {
+    const h = await db
       .prepare(
         'SELECT * FROM legal_holds WHERE id=? AND tenant_id=? AND site_id=? AND released_at IS NULL',
       )
       .get(req.params.id, ...scoped(req.scope));
     if (!h) return res.status(404).json({ error: 'Not found' });
     if (h.created_by === req.user.id || !reference(req.body?.caseReference))
-      return res
-        .status(409)
-        .json({
-          error:
-            'A different administrator and a reviewed case reference are required to release the hold',
-        });
-    tx(() => {
+      return res.status(409).json({
+        error:
+          'A different administrator and a reviewed case reference are required to release the hold',
+      });
+    await tx(async () => {
       const at = new Date().toISOString();
       store.journal.append({
         version: 1,
@@ -283,19 +290,19 @@ export function registerPrivacy(app, config, store, { auth, admin, recent }) {
         at,
         records: [],
       });
-      db.prepare('UPDATE legal_holds SET released_at=? WHERE id=?').run(at, h.id);
-      audit(req.scope, req.user.id, 'LEGAL_HOLD_RELEASED', h.id);
+      await db.prepare('UPDATE legal_holds SET released_at=? WHERE id=?').run(at, h.id);
+      await audit(req.scope, req.user.id, 'LEGAL_HOLD_RELEASED', h.id);
     });
     res.json({ ok: true });
   });
-  app.post('/api/invitations/:id/erase', auth, (req, res) => {
-    const invite = get(req.scope, 'invitations', req.params.id);
+  app.post('/api/invitations/:id/erase', auth, async (req, res) => {
+    const invite = await get(req.scope, 'invitations', req.params.id);
     if (!invite) return res.status(404).json({ error: 'Not found' });
     if (req.user.role !== 'admin' && invite.createdByUserId !== req.user.id)
       return res.status(403).json({ error: 'Forbidden' });
-    tx(() => {
-      remove(req.scope, 'invitations', invite.id);
-      audit(req.scope, req.user.id, 'INVITE_ERASURE', invite.id);
+    await tx(async () => {
+      await remove(req.scope, 'invitations', invite.id);
+      await audit(req.scope, req.user.id, 'INVITE_ERASURE', invite.id);
     });
     res.json({ ok: true });
   });

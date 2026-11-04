@@ -22,6 +22,7 @@ COPY --from=build /app/dist ./dist
 COPY package.json package-lock.json server.mjs ./
 COPY server ./server
 COPY ops ./ops
+COPY migrations ./migrations
 USER 10001:10001
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node","-e","fetch('http://127.0.0.1:8080/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

@@ -1,3 +1,5 @@
+> Historical SQLite-era report/instructions. The current database is Supabase PostgreSQL. Use [the Supabase VPS guide](deploy/VPS_SUPABASE.md) and [migration notes](SUPABASE_MIGRATION.md).
+
 # SecurePass re-audit implementation
 
 This change implements the technical findings supplied in `SecurePass_Reaudit_Findings.md`. The PRD and solution brief informed product context; their compliance and security claims are not treated as evidence. This is an implementation report, not a legal compliance certification or independent penetration test.

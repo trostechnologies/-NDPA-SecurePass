@@ -1,3 +1,5 @@
+> Historical SQLite-era report/instructions. The current database is Supabase PostgreSQL. Use [the Supabase VPS guide](deploy/VPS_SUPABASE.md) and [migration notes](SUPABASE_MIGRATION.md).
+
 # Security implementation status
 
 SecurePass supports both separate customer/site installations and a shared customer/site service with scoped authorization.

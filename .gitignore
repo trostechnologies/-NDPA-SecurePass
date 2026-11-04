@@ -23,3 +23,7 @@ securepass-audit-archives/
 *.spbackup
 *.spbackup.manifest
 *.spaudit
+
+# PostgreSQL credentials and trust files
+database.json
+*.pgpass

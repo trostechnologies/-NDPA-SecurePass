@@ -13,13 +13,16 @@
     "dev:server": "node --env-file-if-exists=.env --watch server.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "playwright test",
-    "ops": "node --env-file-if-exists=.env ops/manage.mjs"
+    "ops": "node --env-file-if-exists=.env ops/manage.mjs",
+    "db": "node --env-file-if-exists=.env ops/database.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "otpauth": "^9.5.2"
+    "otpauth": "^9.5.2",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^4.17.21",

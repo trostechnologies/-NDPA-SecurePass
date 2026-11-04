@@ -1,6 +1,6 @@
 import { writeManagedBackup, pruneManagedBackups } from '../server/backups.mjs';
 
-export function runBackupCycle(
+export async function runBackupCycle(
   environment,
   {
     write = writeManagedBackup,
@@ -10,15 +10,19 @@ export function runBackupCycle(
   } = {},
 ) {
   // Expiry is independent of successful new snapshots, including disk-full failures.
-  let pruned;
+  let pruned,
+    cleanupOk = false,
+    backupOk = false;
   try {
-    pruned = prune(environment);
+    pruned = await prune(environment);
+    cleanupOk = true;
     log(JSON.stringify({ event: 'backup_cleanup_completed', expiredFilesRemoved: pruned.removed }));
   } catch (cause) {
     error(JSON.stringify({ event: 'backup_cleanup_failed', code: cause.code || cause.name }));
   }
   try {
-    const result = write(environment);
+    const result = await write(environment);
+    backupOk = true;
     log(
       JSON.stringify({
         event: 'backup_completed',
@@ -29,4 +33,5 @@ export function runBackupCycle(
   } catch (cause) {
     error(JSON.stringify({ event: 'backup_failed', code: cause.code || cause.name }));
   }
+  return { ok: cleanupOk && backupOk };
 }

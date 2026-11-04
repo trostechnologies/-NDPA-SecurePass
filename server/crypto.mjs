@@ -22,12 +22,9 @@ export function loadKeys(env, dir, production) {
   if (!production && !env.SECUREPASS_DATA_KEYS) {
     if (existsSync(file)) saved = JSON.parse(readFileSync(file, 'utf8'));
     else {
-      if (
-        existsSync(path.join(dir, 'securepass.sqlite')) &&
-        env.SECUREPASS_ALLOW_LEGACY_MIGRATION !== 'true'
-      )
+      if (existsSync(path.join(dir, '.database-initialized')))
         throw Error(
-          'Development keys missing for existing database; restore keys or explicitly migrate a plaintext legacy database',
+          'Development keys missing for an initialized database; restore the original keys',
         );
       saved = {
         data: { development: randomBytes(32).toString('base64') },

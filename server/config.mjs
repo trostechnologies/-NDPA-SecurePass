@@ -5,6 +5,8 @@ export function loadConfig(input) {
   const env = { ...input };
   if (env.SECUREPASS_SECRETS_FILE)
     Object.assign(env, JSON.parse(readFileSync(env.SECUREPASS_SECRETS_FILE, 'utf8')));
+  if (env.SECUREPASS_DATABASE_FILE)
+    Object.assign(env, JSON.parse(readFileSync(env.SECUREPASS_DATABASE_FILE, 'utf8')));
   const production = env.NODE_ENV === 'production';
   const number = (name, fallback, max) => {
     const value = Number(env[name] ?? fallback);

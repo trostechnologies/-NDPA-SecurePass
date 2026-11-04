@@ -1,3 +1,4 @@
+import { postgresFixture } from './postgres-fixture.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -48,7 +49,10 @@ export async function fixture(options = {}) {
     env.SECUREPASS_GATE_DEVICES_FILE = file;
     env.SECUREPASS_GATE_ENABLED = 'true';
   }
-  const runtime = await createApplication(env),
+  const driver = await postgresFixture(path.join(root, 'pgdata'), {
+    runtimeRole: options.runtimeRole,
+  });
+  const runtime = await createApplication(env, { databaseDriver: driver }),
     server = runtime.app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`,
@@ -119,7 +123,7 @@ export async function fixture(options = {}) {
   async function close({ preserve = false } = {}) {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    runtime.close();
+    await runtime.close();
     if (!preserve) {
       const target = path.resolve(root);
       assert.ok(

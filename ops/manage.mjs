@@ -20,14 +20,17 @@ const [command, ...argumentsList] = process.argv.slice(2),
   );
 async function main() {
   if (command === 'backup')
-    return { ...writeManagedBackup(process.env), pruned: pruneManagedBackups(process.env).removed };
-  if (command === 'prune-backups') return pruneManagedBackups(process.env);
+    return {
+      ...(await writeManagedBackup(process.env)),
+      pruned: (await pruneManagedBackups(process.env)).removed,
+    };
+  if (command === 'prune-backups') return await pruneManagedBackups(process.env);
   if (command === 'restore') {
     if (!args.file || !args.target)
       throw Error(
         'restore requires --file and --target; the authoritative journal must remain available',
       );
-    return restoreManagedBackup(process.env, args.file, args.target);
+    return await restoreManagedBackup(process.env, args.file, args.target);
   }
   if (
     ![
@@ -51,14 +54,14 @@ async function main() {
   try {
     const { store, config } = runtime,
       { db, keys, tx, audit, grant, scoped } = store;
-    if (command === 'verify-audit') return store.verifyAudit();
+    if (command === 'verify-audit') return await store.verifyAudit();
     if (command === 'prepare-audit-archive')
-      return prepareAuditArchive(store, config, {
+      return await prepareAuditArchive(store, config, {
         directory: args.directory,
         keep: Number(args.keep || 1000),
       });
     if (command === 'commit-audit-archive')
-      return commitAuditArchive(store, config, {
+      return await commitAuditArchive(store, config, {
         file: args.file,
         externalReference: args.reference,
       });
@@ -68,49 +71,55 @@ async function main() {
       return { ok: true, lastSequence: verified.seq, lastHash: verified.mac };
     }
     if (command === 'rewrap') {
-      tx(() => {
+      await tx(async () => {
         for (const scope of config.sites) {
-          for (const row of db
+          for (const row of await db
             .prepare('SELECT * FROM secure_records WHERE tenant_id=? AND site_id=?')
             .all(...scoped(scope))) {
             const obj = keys.open(row.cipher, `record:${scope.scopeId}:${row.kind}:${row.id}`);
-            store.put(scope, row.kind, obj, row.expires);
+            await store.put(scope, row.kind, obj, row.expires);
           }
-          for (const n of db
+          for (const n of await db
             .prepare('SELECT version,cipher FROM notice_versions WHERE tenant_id=? AND site_id=?')
             .all(...scoped(scope)))
-            db.prepare(
-              'UPDATE notice_versions SET cipher=? WHERE tenant_id=? AND site_id=? AND version=?',
-            ).run(
-              keys.seal(
-                keys.open(n.cipher, `notice:${scope.scopeId}:${n.version}`),
-                `notice:${scope.scopeId}:${n.version}`,
-              ),
-              ...scoped(scope),
-              n.version,
-            );
-          for (const r of db
+            await db
+              .prepare(
+                'UPDATE notice_versions SET cipher=? WHERE tenant_id=? AND site_id=? AND version=?',
+              )
+              .run(
+                keys.seal(
+                  keys.open(n.cipher, `notice:${scope.scopeId}:${n.version}`),
+                  `notice:${scope.scopeId}:${n.version}`,
+                ),
+                ...scoped(scope),
+                n.version,
+              );
+          for (const r of await db
             .prepare('SELECT id,cipher FROM privacy_requests WHERE tenant_id=? AND site_id=?')
             .all(...scoped(scope)))
-            db.prepare('UPDATE privacy_requests SET cipher=? WHERE id=?').run(
-              keys.seal(
-                keys.open(r.cipher, `privacy:${scope.scopeId}:${r.id}`),
-                `privacy:${scope.scopeId}:${r.id}`,
-              ),
-              r.id,
-            );
-          audit(scope, 'operator', 'DATA_KEY_REWRAP', '', `Active key ${keys.active}`);
+            await db
+              .prepare('UPDATE privacy_requests SET cipher=? WHERE id=?')
+              .run(
+                keys.seal(
+                  keys.open(r.cipher, `privacy:${scope.scopeId}:${r.id}`),
+                  `privacy:${scope.scopeId}:${r.id}`,
+                ),
+                r.id,
+              );
+          await audit(scope, 'operator', 'DATA_KEY_REWRAP', '', `Active key ${keys.active}`);
         }
-        for (const f of db.prepare('SELECT * FROM factors').all())
-          db.prepare('UPDATE factors SET secret_cipher=?,recovery_cipher=? WHERE user_id=?').run(
-            keys.seal(keys.open(f.secret_cipher, `mfa:${f.user_id}`), `mfa:${f.user_id}`),
-            keys.seal(
-              keys.open(f.recovery_cipher, `recovery:${f.user_id}`),
-              `recovery:${f.user_id}`,
-            ),
-            f.user_id,
-          );
-        db.exec('DELETE FROM auth_challenges; DELETE FROM sessions;');
+        for (const f of await db.prepare('SELECT * FROM factors').all())
+          await db
+            .prepare('UPDATE factors SET secret_cipher=?,recovery_cipher=? WHERE user_id=?')
+            .run(
+              keys.seal(keys.open(f.secret_cipher, `mfa:${f.user_id}`), `mfa:${f.user_id}`),
+              keys.seal(
+                keys.open(f.recovery_cipher, `recovery:${f.user_id}`),
+                `recovery:${f.user_id}`,
+              ),
+              f.user_id,
+            );
+        await db.exec('DELETE FROM auth_challenges; DELETE FROM sessions;');
       });
       return { rewrapped: true, activeKey: keys.active, sessionsRevoked: true };
     }
@@ -120,19 +129,27 @@ async function main() {
       !/^[\w./-]{3,80}$/.test(args.case || '')
     )
       throw Error('A verified --email, --site and non-sensitive --case reference are required');
-    const user = db
+    const user = await db
         .prepare('SELECT * FROM users WHERE email=?')
         .get(args.email.trim().toLowerCase()),
       scope = config.sites.find((s) => s.key === args.site);
     if (!user) throw Error('Identity not found');
     if (command === 'grant') {
       if (!['admin', 'staff'].includes(args.role)) throw Error('--role must be admin or staff');
-      tx(() => {
-        grant(scope, user, args.role);
-        db.prepare(
-          "UPDATE memberships SET role=?,status='active' WHERE user_id=? AND tenant_id=? AND site_id=?",
-        ).run(args.role, user.id, ...scoped(scope));
-        audit(scope, 'operator', 'SITE_MEMBERSHIP_GRANTED', user.id, 'Operator case verified');
+      await tx(async () => {
+        await grant(scope, user, args.role);
+        await db
+          .prepare(
+            "UPDATE memberships SET role=?,status='active' WHERE user_id=? AND tenant_id=? AND site_id=?",
+          )
+          .run(args.role, user.id, ...scoped(scope));
+        await audit(
+          scope,
+          'operator',
+          'SITE_MEMBERSHIP_GRANTED',
+          user.id,
+          'Operator case verified',
+        );
       });
       return { granted: true, site: scope.key };
     }
@@ -142,22 +159,24 @@ async function main() {
         'Supply a unique 16–1024 character SECUREPASS_RECOVERY_PASSWORD through a secret store',
       );
     const passwordHash = await hashPassword(password);
-    tx(() => {
-      db.prepare('UPDATE users SET password_hash=?,status=? WHERE id=?').run(
-        passwordHash,
-        'active',
-        user.id,
-      );
-      grant(scope, { ...user, status: 'active' }, 'admin');
-      db.prepare(
-        "UPDATE memberships SET status='active',role='admin' WHERE user_id=? AND tenant_id=? AND site_id=?",
-      ).run(user.id, ...scoped(scope));
-      db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id);
-      db.prepare('DELETE FROM auth_challenges WHERE user_id=?').run(user.id);
+    await tx(async () => {
+      await db
+        .prepare('UPDATE users SET password_hash=?,status=? WHERE id=?')
+        .run(passwordHash, 'active', user.id);
+      await grant(scope, { ...user, status: 'active' }, 'admin');
+      await db
+        .prepare(
+          "UPDATE memberships SET status='active',role='admin' WHERE user_id=? AND tenant_id=? AND site_id=?",
+        )
+        .run(user.id, ...scoped(scope));
+      await db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id);
+      await db.prepare('DELETE FROM auth_challenges WHERE user_id=?').run(user.id);
       if (args['reset-mfa'] === 'yes')
-        db.prepare('DELETE FROM factors WHERE user_id=?').run(user.id);
-      db.prepare("INSERT OR REPLACE INTO installation VALUES ('recovery_required','false')").run();
-      audit(
+        await db.prepare('DELETE FROM factors WHERE user_id=?').run(user.id);
+      await db
+        .prepare("INSERT OR REPLACE INTO installation VALUES ('recovery_required','false')")
+        .run();
+      await audit(
         scope,
         'operator',
         'OPERATOR_RECOVERY',
@@ -167,7 +186,7 @@ async function main() {
     });
     return { recovered: true, site: scope.key, mfaEnrollmentRequired: args['reset-mfa'] === 'yes' };
   } finally {
-    runtime.close();
+    await runtime.close();
   }
 }
 try {

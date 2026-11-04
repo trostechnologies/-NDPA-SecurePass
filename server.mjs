@@ -9,8 +9,8 @@ let stopping = false;
 function stop() {
   if (stopping) return;
   stopping = true;
-  server.close(() => {
-    runtime.close();
+  server.close(async () => {
+    await runtime.close();
     process.exit(0);
   });
   setTimeout(() => process.exit(1), 10000).unref();

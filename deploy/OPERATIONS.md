@@ -1,3 +1,5 @@
+> Historical SQLite-era report/instructions. The current database is Supabase PostgreSQL. Use [the Supabase VPS guide](VPS_SUPABASE.md) and [migration notes](../SUPABASE_MIGRATION.md).
+
 # SecurePass operations
 
 Use Node.js 24 LTS. Keep secrets, personal data and runtime volumes outside source control. Never use the development fixture or browser-test server for production.

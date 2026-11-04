@@ -1,0 +1,25 @@
+[Unit]
+Description=SecurePass application (Supabase PostgreSQL)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=securepass
+Group=securepass
+WorkingDirectory=/opt/securepass
+EnvironmentFile=/etc/securepass/runtime.env
+ExecStart=/usr/bin/node /opt/securepass/server.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/securepass-state /var/lib/securepass-journal /var/lib/securepass-backups /var/lib/securepass-audit-archives
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

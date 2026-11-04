@@ -2,14 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { postgresFixture } from './postgres-fixture.mjs';
 import * as OTPAuth from 'otpauth';
 import { fixture, site, adminEmail, adminPassword } from './helpers.mjs';
 import { digest, verifyFactor } from '../server/crypto.mjs';
 import { snapshotDatabase, restoreSnapshot } from '../server/backups.mjs';
 import { createApplication } from '../server/app.mjs';
 import { loadConfig } from '../server/config.mjs';
-
 test('real HTTP: authentication, Origin, JSON limits, role guards, suspension and logout', async () => {
   const f = await fixture();
   try {
@@ -64,7 +63,6 @@ test('real HTTP: authentication, Origin, JSON limits, role guards, suspension an
     await f.close();
   }
 });
-
 test('shared mode isolates customer AND site records, sessions, ownership, invitations and directory', async () => {
   const sites = [
     site('a-one', 'tenant-a', 'one'),
@@ -198,7 +196,6 @@ test('shared mode isolates customer AND site records, sessions, ownership, invit
     await f.close();
   }
 });
-
 test('privileged MFA enrolls before access, rejects replay, consumes recovery codes and rotates passwords', async () => {
   const f = await fixture({ env: { SECUREPASS_MFA_REQUIRED: 'admin' } });
   try {
@@ -214,7 +211,7 @@ test('privileged MFA enrolls before access, rejects replay, consumes recovery co
     assert.equal(complete.status, 200);
     assert.equal(complete.body.recoveryCodes.length, 10);
     assert.equal((await f.request('GET', '/api/users', { cookie: complete.cookie })).status, 200);
-    const factor = f.runtime.store.db.prepare('SELECT * FROM factors').get();
+    const factor = await f.runtime.store.db.prepare('SELECT * FROM factors').get();
     assert.ok(!factor.secret_cipher.includes(login.body.secret));
     assert.ok(!factor.recovery_cipher.includes(complete.body.recoveryCodes[0]));
     await f.request('POST', '/api/logout', { cookie: complete.cookie, body: {} });
@@ -260,13 +257,12 @@ test('privileged MFA enrolls before access, rejects replay, consumes recovery co
     await f.close();
   }
 });
-
 test('durable login throttle normalizes whitespace/case across restart and rejects expired sessions', async () => {
   let f = await fixture();
   const root = f.root;
   try {
     const login = await f.login();
-    f.runtime.store.db.prepare('UPDATE sessions SET expires_at=?').run(Date.now() - 1);
+    await f.runtime.store.db.prepare('UPDATE sessions SET expires_at=?').run(Date.now() - 1);
     assert.equal((await f.request('GET', '/api/session', { cookie: login.cookie })).status, 401);
     for (let n = 0; n < 9; n++)
       assert.equal(
@@ -281,7 +277,6 @@ test('durable login throttle normalizes whitespace/case across restart and rejec
     await f.close();
   }
 });
-
 test('public check-in uses one-use scoped proof, idempotency, duplicate detection and notice-version checks', async () => {
   const f = await fixture();
   try {
@@ -302,18 +297,26 @@ test('public check-in uses one-use scoped proof, idempotency, duplicate detectio
       409,
     );
     assert.equal((await f.checkin({ email: body.email })).status, 409);
+    const concurrentBody = { ...f.visitorBody(), proof: await f.proof() };
+    const concurrent = await Promise.all([
+      f.request('POST', '/api/checkin', { body: concurrentBody }),
+      f.request('POST', '/api/checkin', { body: concurrentBody }),
+    ]);
+    assert.ok(concurrent.every((r) => [200, 201].includes(r.status)));
+    assert.equal(concurrent[0].body.id, concurrent[1].body.id);
     assert.equal(saved.body.hasBiometricPhoto, false);
     assert.equal(saved.body.wifiAccessGranted, false);
     assert.equal(saved.body.accessStatus, 'reception_only');
     assert.ok(saved.body.noticeHash);
     assert.ok(
-      !fs.readFileSync(path.join(f.data, 'securepass.sqlite')).includes(Buffer.from(body.email)),
+      !JSON.stringify(
+        await f.runtime.store.db.prepare('SELECT cipher FROM secure_records').all(),
+      ).includes(body.email),
     );
   } finally {
     await f.close();
   }
 });
-
 test('gate devices are site-bound; registration needs explicit approval; expiry and checkout revoke online access', async () => {
   const token = 'test-only-device-token-12345678901234567890',
     sites = [site('one'), site('two')];
@@ -348,9 +351,9 @@ test('gate devices are site-bound; registration needs explicit approval; expiry 
     );
     assert.equal((await gate()).body.allowed, true);
     const scope = f.runtime.config.sites[0],
-      v = f.runtime.store.get(scope, 'visitors', visit.body.id);
+      v = await f.runtime.store.get(scope, 'visitors', visit.body.id);
     v.accessExpiresAt = new Date(Date.now() - 1).toISOString();
-    f.runtime.store.put(scope, 'visitors', v);
+    await f.runtime.store.put(scope, 'visitors', v);
     assert.equal((await gate()).body.allowed, false);
     await f.request('POST', `/api/visitors/${v.id}/authorize`, { cookie: admin.cookie, body: {} });
     await f.request('PATCH', `/api/visitors/${v.id}/checkout`, { cookie: admin.cookie, body: {} });
@@ -359,7 +362,6 @@ test('gate devices are site-bound; registration needs explicit approval; expiry 
     await f.close();
   }
 });
-
 test('independent privacy approval, legal holds, signed erasure journal and backup restore prevent resurrection', async () => {
   const f = await fixture();
   try {
@@ -377,7 +379,7 @@ test('independent privacy approval, legal holds, signed erasure journal and back
     const visit = await f.checkin({ email: 'held@example.test', fullName: 'Private Subject' });
     assert.equal(visit.status, 201);
     const { store, config } = f.runtime;
-    const encrypted = snapshotDatabase(store.db, store.keys, store.journal, config);
+    const encrypted = await snapshotDatabase(store.db, store.keys, store.journal, config);
     assert.ok(!encrypted.includes('Private Subject'));
     const held = await f.request('POST', '/api/privacy/holds', {
       cookie: admin.cookie,
@@ -385,10 +387,10 @@ test('independent privacy approval, legal holds, signed erasure journal and back
     });
     assert.equal(held.status, 201);
     const scope = config.sites[0],
-      v = store.get(scope, 'visitors', visit.body.id);
-    store.put(scope, 'visitors', v, Date.now() - 1);
-    store.purge();
-    assert.ok(store.get(scope, 'visitors', v.id));
+      v = await store.get(scope, 'visitors', visit.body.id);
+    await store.put(scope, 'visitors', v, Date.now() - 1);
+    await store.purge();
+    assert.ok(await store.get(scope, 'visitors', v.id));
     const access = await f.request('POST', '/api/privacy/requests', {
       cookie: admin.cookie,
       body: { visitorId: v.id, type: 'access' },
@@ -456,32 +458,43 @@ test('independent privacy approval, legal holds, signed erasure journal and back
     });
     assert.equal(erased.status, 200);
     assert.ok(erased.body.receipt.signature);
-    assert.equal(store.get(scope, 'visitors', v.id), null);
+    assert.equal(await store.get(scope, 'visitors', v.id), null);
     const target = path.join(f.root, 'restored');
-    const result = restoreSnapshot(encrypted, {
+    const restored = await postgresFixture(path.join(f.root, 'restored-pg'));
+    const result = await restoreSnapshot(encrypted, {
+      db: restored,
       keys: store.keys,
       journal: store.journal,
       config,
       targetDirectory: target,
     });
     assert.equal(result.quarantined, true);
-    const restored = new DatabaseSync(path.join(target, 'securepass.sqlite'));
+
     assert.equal(
-      restored.prepare("SELECT COUNT(*) AS n FROM secure_records WHERE kind='visitors'").get().n,
+      (
+        await restored
+          .prepare("SELECT COUNT(*) AS n FROM secure_records WHERE kind='visitors'")
+          .get()
+      ).n,
       0,
     );
-    assert.equal(restored.prepare('SELECT COUNT(*) AS n FROM sessions').get().n, 0);
+    assert.equal((await restored.prepare('SELECT COUNT(*) AS n FROM sessions').get()).n, 0);
     assert.equal(
-      restored.prepare("SELECT COUNT(*) AS n FROM memberships WHERE status='active'").get().n,
+      (await restored.prepare("SELECT COUNT(*) AS n FROM memberships WHERE status='active'").get())
+        .n,
       0,
     );
-    restored.close();
+    await restored.close();
     fs.copyFileSync(
       path.join(f.data, '.development-keys.json'),
       path.join(target, '.development-keys.json'),
     );
     await assert.rejects(
-      () => createApplication({ ...f.env, SECUREPASS_DATA_DIR: target }),
+      async () =>
+        await createApplication(
+          { ...f.env, SECUREPASS_DATA_DIR: target },
+          { databaseDriver: await postgresFixture(path.join(f.root, 'restored-pg')) },
+        ),
       /quarantined/,
     );
     const tampered = JSON.parse(encrypted);
@@ -491,28 +504,27 @@ test('independent privacy approval, legal holds, signed erasure journal and back
     await f.close();
   }
 });
-
 test('encrypted record AAD blocks cross-site substitution; audit mutation and tail rollback are detected', async () => {
   const f = await fixture({ sites: [site('one'), site('two')] });
   try {
     const a = await f.checkin({}, 'one'),
       b = await f.checkin({}, 'two');
     const { db, get } = f.runtime.store;
-    const cipher = db.prepare('SELECT cipher FROM secure_records WHERE id=?').get(a.body.id).cipher;
-    db.prepare('UPDATE secure_records SET cipher=? WHERE id=?').run(cipher, b.body.id);
-    assert.throws(() => get(f.runtime.config.sites[1], 'visitors', b.body.id));
-    assert.throws(
-      () => db.prepare("UPDATE audit_chain SET detail='tamper' WHERE seq=1").run(),
+    const cipher = (await db.prepare('SELECT cipher FROM secure_records WHERE id=?').get(a.body.id))
+      .cipher;
+    await db.prepare('UPDATE secure_records SET cipher=? WHERE id=?').run(cipher, b.body.id);
+    await assert.rejects(async () => await get(f.runtime.config.sites[1], 'visitors', b.body.id));
+    await assert.rejects(
+      async () => await db.prepare("UPDATE audit_chain SET detail='tamper' WHERE seq=1").run(),
       /append-only/,
     );
-    db.exec('DROP TRIGGER audit_no_update');
-    db.prepare("UPDATE audit_chain SET detail='tamper' WHERE seq=1").run();
-    assert.throws(() => f.runtime.store.verifyAudit(), /integrity/);
+    await db.exec('DROP TRIGGER audit_no_update ON audit_chain');
+    await db.prepare("UPDATE audit_chain SET detail='tamper' WHERE seq=1").run();
+    await assert.rejects(async () => await f.runtime.store.verifyAudit(), /integrity/);
   } finally {
     await f.close();
   }
 });
-
 test('production rejects missing security controls and isolated databases refuse shared reuse', async () => {
   assert.throws(
     () =>
@@ -533,7 +545,6 @@ test('production rejects missing security controls and isolated databases refuse
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
-
 test('RFC 6238 known value and token counter replay protection', () => {
   const secret = OTPAuth.Secret.fromUTF8('12345678901234567890'),
     totp = new OTPAuth.TOTP({ secret, digits: 8 });

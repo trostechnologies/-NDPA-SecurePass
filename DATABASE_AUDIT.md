@@ -1,3 +1,5 @@
+> Historical SQLite-era report/instructions. The current database is Supabase PostgreSQL. Use [the Supabase VPS guide](deploy/VPS_SUPABASE.md) and [migration notes](SUPABASE_MIGRATION.md).
+
 # Database audit and remediation — 2026-11-02
 
 Scope: SQLite persistence, deployment boundaries, encrypted snapshots, restore safety, expiry cleanup and readiness. Source review and automated tests used disposable local databases. No live VPS or hosted database was available to inspect. This report does not certify a running deployment.

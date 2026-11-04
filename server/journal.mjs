@@ -12,7 +12,6 @@ import {
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { equal } from './crypto.mjs';
-
 export function openJournal(keys, directory, { create = true, expectExisting = false } = {}) {
   const dir = path.resolve(directory),
     file = path.join(dir, 'erasure-journal.jsonl'),
@@ -86,90 +85,101 @@ export function openJournal(keys, directory, { create = true, expectExisting = f
     },
   };
 }
-
 /** Reconcile only signed, independently retained governance intents. */
-export function replayGovernance(db, entries, keys) {
+export async function replayGovernance(db, entries, keys) {
   let changes = 0;
   for (const entry of entries) {
     if (entry.action === 'hold')
       changes += Number(
-        db
-          .prepare('INSERT INTO legal_holds VALUES (?,?,?,?,?,?,?,NULL) ON CONFLICT(id) DO NOTHING')
-          .run(
-            entry.holdId,
-            entry.tenantId,
-            entry.siteId,
-            entry.subjectHash,
-            entry.caseReference,
-            entry.actor,
-            entry.at,
-          ).changes,
+        (
+          await db
+            .prepare(
+              'INSERT INTO legal_holds VALUES (?,?,?,?,?,?,?,NULL) ON CONFLICT(id) DO NOTHING',
+            )
+            .run(
+              entry.holdId,
+              entry.tenantId,
+              entry.siteId,
+              entry.subjectHash,
+              entry.caseReference,
+              entry.actor,
+              entry.at,
+            )
+        ).changes,
       );
     else if (entry.action === 'release_hold')
       changes += Number(
-        db
-          .prepare(
-            'UPDATE legal_holds SET released_at=? WHERE id=? AND tenant_id=? AND site_id=? AND (released_at IS NULL OR released_at<>?)',
-          )
-          .run(entry.at, entry.holdId, entry.tenantId, entry.siteId, entry.at).changes,
+        (
+          await db
+            .prepare(
+              'UPDATE legal_holds SET released_at=? WHERE id=? AND tenant_id=? AND site_id=? AND (released_at IS NULL OR released_at<>?)',
+            )
+            .run(entry.at, entry.holdId, entry.tenantId, entry.siteId, entry.at)
+        ).changes,
       );
     else if (entry.action === 'erase') {
       for (const record of entry.records)
         changes += Number(
-          db
-            .prepare(
-              'DELETE FROM secure_records WHERE tenant_id=? AND site_id=? AND kind=? AND id=?',
-            )
-            .run(entry.tenantId, entry.siteId, record.kind, record.id).changes,
+          (
+            await db
+              .prepare(
+                'DELETE FROM secure_records WHERE tenant_id=? AND site_id=? AND kind=? AND id=?',
+              )
+              .run(entry.tenantId, entry.siteId, record.kind, record.id)
+          ).changes,
         );
       changes += Number(
-        db
-          .prepare('INSERT OR IGNORE INTO erasures VALUES (?,?,?,?,?,?,?)')
-          .run(
-            entry.id,
-            entry.tenantId,
-            entry.siteId,
-            entry.subjectHash,
-            JSON.stringify(entry.records),
-            entry.at,
-            JSON.stringify(entry),
-          ).changes,
+        (
+          await db
+            .prepare('INSERT OR IGNORE INTO erasures VALUES (?,?,?,?,?,?,?)')
+            .run(
+              entry.id,
+              entry.tenantId,
+              entry.siteId,
+              entry.subjectHash,
+              JSON.stringify(entry.records),
+              entry.at,
+              JSON.stringify(entry),
+            )
+        ).changes,
       );
-      const request = db
+      const request = await db
         .prepare("SELECT * FROM privacy_requests WHERE id=? AND status<>'fulfilled'")
         .get(entry.requestId);
       if (request) {
         const aad = `privacy:${entry.tenantId}:${entry.siteId}:${request.id}`,
           body = keys.open(request.cipher, aad);
         changes += Number(
-          db
-            .prepare(
-              "UPDATE privacy_requests SET status='fulfilled',verified_by=?,cipher=? WHERE id=?",
-            )
-            .run(
-              entry.approvedBy,
-              keys.seal(
-                {
-                  ...body,
-                  status: 'fulfilled',
-                  verifiedBy: entry.approvedBy,
-                  verificationReference:
-                    body.verificationReference ||
-                    `HASH-${entry.identityVerification.caseReferenceHash}`,
-                  verificationMethod: entry.identityVerification.method,
-                  verifiedAt: entry.identityVerification.verifiedAt,
-                },
-                aad,
-              ),
-              request.id,
-            ).changes,
+          (
+            await db
+              .prepare(
+                "UPDATE privacy_requests SET status='fulfilled',verified_by=?,cipher=? WHERE id=?",
+              )
+              .run(
+                entry.approvedBy,
+                keys.seal(
+                  {
+                    ...body,
+                    status: 'fulfilled',
+                    verifiedBy: entry.approvedBy,
+                    verificationReference:
+                      body.verificationReference ||
+                      `HASH-${entry.identityVerification.caseReferenceHash}`,
+                    verificationMethod: entry.identityVerification.method,
+                    verifiedAt: entry.identityVerification.verifiedAt,
+                  },
+                  aad,
+                ),
+                request.id,
+              )
+          ).changes,
         );
       }
     }
   }
   return changes;
 }
-export function verifyGovernance(db, entries) {
+export async function verifyGovernance(db, entries) {
   const holds = new Map();
   for (const e of entries) {
     if (e.action === 'hold') holds.set(e.holdId, { ...e, releasedAt: null });
@@ -180,7 +190,7 @@ export function verifyGovernance(db, entries) {
     } else if (e.action === 'erase')
       for (const r of e.records)
         if (
-          db
+          await db
             .prepare(
               'SELECT 1 FROM secure_records WHERE tenant_id=? AND site_id=? AND kind=? AND id=?',
             )
@@ -188,7 +198,7 @@ export function verifyGovernance(db, entries) {
         )
           throw Error('Erased record resurrection detected');
   }
-  const rows = db.prepare('SELECT * FROM legal_holds').all();
+  const rows = await db.prepare('SELECT * FROM legal_holds').all();
   if (rows.length !== holds.size) throw Error('Legal-hold journal/database mismatch');
   for (const r of rows) {
     const h = holds.get(r.id);

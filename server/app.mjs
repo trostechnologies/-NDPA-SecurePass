@@ -1,3 +1,4 @@
+import { asyncApp } from './async-app.mjs';
 import express from 'express';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -16,34 +17,48 @@ import {
 } from './auth.mjs';
 import { registerPrivacy } from './privacy.mjs';
 import { openJournal, replayGovernance, verifyGovernance } from './journal.mjs';
-
-export async function createApplication(environment = process.env, { maintenance = false } = {}) {
+export async function createApplication(
+  environment = process.env,
+  { maintenance = false, databaseDriver } = {},
+) {
   const config = loadConfig(environment),
-    store = openDatabase(config);
+    store = await openDatabase(config, { driver: databaseDriver });
   try {
     const { db, keys, scoped, tx, audit, get, put, list, remove, member, grant, metric, consume } =
       store;
+    if (config.production && !maintenance) {
+      const role = await db
+        .prepare(
+          'SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls FROM pg_roles WHERE rolname=current_user',
+        )
+        .get();
+      if (!role || role.rolsuper || role.rolcreatedb || role.rolcreaterole || role.rolbypassrls)
+        throw Error('Use the restricted SecurePass runtime role, not the Supabase administrator');
+    }
+
     if (
-      db.prepare("SELECT value FROM installation WHERE key='recovery_required'").get()?.value ===
-        'true' &&
+      (await db.prepare("SELECT value FROM installation WHERE key='recovery_required'").get())
+        ?.value === 'true' &&
       config.env.SECUREPASS_OPERATOR_RECOVERY !== 'true'
     )
       throw Error(
         'Restored database is quarantined; complete operator credential recovery before serving',
       );
-    const journalInitialized = !!db
+    const journalInitialized = !!(await db
       .prepare("SELECT 1 FROM installation WHERE key='journal_initialized'")
-      .get();
-    store.journal = openJournal(
+      .get());
+    store.journal = await openJournal(
       keys,
       config.env.SECUREPASS_JOURNAL_DIR || path.join(store.dir, 'privacy-journal'),
       { expectExisting: journalInitialized },
     );
-    db.prepare("INSERT OR IGNORE INTO installation VALUES ('journal_initialized','true')").run();
+    await db
+      .prepare("INSERT OR IGNORE INTO installation VALUES ('journal_initialized','true')")
+      .run();
     const journal = store.journal.read();
-    store.tx(() => replayGovernance(db, journal.entries, keys));
-    verifyGovernance(db, journal.entries);
-    for (const row of db.prepare('SELECT id,receipt FROM erasures').iterate())
+    await store.tx(async () => await replayGovernance(db, journal.entries, keys));
+    await verifyGovernance(db, journal.entries);
+    for (const row of await db.prepare('SELECT id,receipt FROM erasures').all())
       if (
         !journal.entries.some(
           (e) => e.id === row.id && e.signature === JSON.parse(row.receipt).signature,
@@ -51,11 +66,11 @@ export async function createApplication(environment = process.env, { maintenance
       )
         throw Error('Erasure journal is behind the database');
     let integrityHealthy = true;
-    const assertIntegrity = () => {
+    const assertIntegrity = async () => {
       try {
-        const result = store.verifyAudit();
-        store.verifyRecords();
-        verifyGovernance(db, store.journal.read().entries);
+        const result = await store.verifyAudit();
+        await store.verifyRecords();
+        await verifyGovernance(db, store.journal.read().entries);
         integrityHealthy = true;
         return result;
       } catch (error) {
@@ -63,7 +78,7 @@ export async function createApplication(environment = process.env, { maintenance
         throw error;
       }
     };
-    const app = express();
+    const app = asyncApp(express());
     app.disable('x-powered-by');
     app.set('trust proxy', config.env.TRUST_PROXY === '1' ? 1 : false);
     const devices = config.env.SECUREPASS_GATE_DEVICES_FILE
@@ -85,7 +100,7 @@ export async function createApplication(environment = process.env, { maintenance
       throw Error('Gate devices must be explicitly bound to sites and hashed credentials');
     const rate =
       (name, limit, ms, key = (req) => req.ip) =>
-      (req, res, next) => {
+      async (req, res, next) => {
         const scope = [
           'global',
           'source',
@@ -95,8 +110,8 @@ export async function createApplication(environment = process.env, { maintenance
         ].includes(name)
           ? 'installation'
           : req.scope?.scopeId || 'installation';
-        if (!consume(`${scope}:${name}:${digest(key(req))}`, limit, ms)) {
-          metric(req.scope, 'rate_limited');
+        if (!(await consume(`${scope}:${name}:${digest(key(req))}`, limit, ms))) {
+          await metric(req.scope, 'rate_limited');
           res.setHeader('Retry-After', String(Math.ceil(ms / 1000)));
           return res.status(429).json({ error: 'Request limit reached; retry later' });
         }
@@ -120,10 +135,10 @@ export async function createApplication(environment = process.env, { maintenance
       next();
     });
     app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-    app.get('/api/ready', (_req, res) => {
+    app.get('/api/ready', async (_req, res) => {
       try {
         const auditCapacityAvailable =
-          db.prepare('SELECT COUNT(*) AS n FROM audit_chain').get().n < config.maxAudits;
+          (await db.prepare('SELECT COUNT(*) AS n FROM audit_chain').get()).n < config.maxAudits;
         const ready = integrityHealthy && auditCapacityAvailable;
         res.status(ready ? 200 : 503).json({ ready });
       } catch {
@@ -153,7 +168,7 @@ export async function createApplication(environment = process.env, { maintenance
       req.scope = scope;
       next();
     });
-    app.use('/api', (req, res, next) => {
+    app.use('/api', async (req, res, next) => {
       // The scanner route has independent device authentication and never uses session cookies.
       const deviceRequest = req.method === 'POST' && req.path === '/gate/verify';
       if (
@@ -161,7 +176,7 @@ export async function createApplication(environment = process.env, { maintenance
         ['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) &&
         req.get('origin') !== config.origin
       ) {
-        metric(req.scope, 'origin_rejected');
+        await metric(req.scope, 'origin_rejected');
         return res.status(403).json({ error: 'Origin check failed' });
       }
       next();
@@ -178,14 +193,14 @@ export async function createApplication(environment = process.env, { maintenance
       phone: '',
       avatar: '',
     });
-    const privateHosts = (s) => list(s, 'hosts', { limit: 1000 });
-    function syncHost(scope, u) {
+    const privateHosts = async (s) => await list(s, 'hosts', { limit: 1000 });
+    async function syncHost(scope, u) {
       if (u.membership_status !== 'active') {
-        remove(scope, 'hosts', u.id);
+        await remove(scope, 'hosts', u.id);
         return;
       }
-      const old = get(scope, 'hosts', u.id);
-      put(scope, 'hosts', {
+      const old = await get(scope, 'hosts', u.id);
+      await put(scope, 'hosts', {
         id: u.id,
         userId: u.id,
         name: u.display_name,
@@ -197,19 +212,19 @@ export async function createApplication(environment = process.env, { maintenance
       });
     }
     for (const scope of config.sites) {
-      put(scope, 'hosts', {
+      await put(scope, 'hosts', {
         id: 'reception',
         name: 'Reception',
         department: 'Reception',
         title: 'Reception',
         floor: 'Reception',
       });
-      for (const u of db
+      for (const u of await db
         .prepare('SELECT user_id FROM memberships WHERE tenant_id=? AND site_id=?')
         .all(...scoped(scope)))
-        syncHost(scope, member(scope, u.user_id));
+        await syncHost(scope, await member(scope, u.user_id));
     }
-    const optionalUser = (req) => {
+    const optionalUser = async (req) => {
       const token = (req.headers.cookie || '')
         .split(';')
         .map((x) => x.trim())
@@ -217,17 +232,18 @@ export async function createApplication(environment = process.env, { maintenance
         ?.slice(11);
       const r =
         token &&
-        db
+        (await db
           .prepare(
             'SELECT * FROM sessions WHERE token_hash=? AND tenant_id=? AND site_id=? AND expires_at>?',
           )
-          .get(digest(token), ...scoped(req.scope), Date.now());
-      const u = r && member(req.scope, r.user_id);
+          .get(digest(token), ...scoped(req.scope), Date.now()));
+      const u = r && (await member(req.scope, r.user_id));
       return u &&
         u.status === 'active' &&
         u.membership_status === 'active' &&
         (!required(u) ||
-          (r.mfa_verified_at && db.prepare('SELECT 1 FROM factors WHERE user_id=?').get(u.id)))
+          (r.mfa_verified_at &&
+            (await db.prepare('SELECT 1 FROM factors WHERE user_id=?').get(u.id))))
         ? u
         : null;
     };
@@ -251,9 +267,9 @@ export async function createApplication(environment = process.env, { maintenance
         photoEnabled: false,
       }),
     );
-    app.get('/api/hosts', (req, res) => {
-      const user = optionalUser(req),
-        hosts = privateHosts(req.scope);
+    app.get('/api/hosts', async (req, res) => {
+      const user = await optionalUser(req),
+        hosts = await privateHosts(req.scope);
       res.json(
         user
           ? hosts.map((h) => ({
@@ -267,8 +283,8 @@ export async function createApplication(environment = process.env, { maintenance
               .map((h) => publicHost({ ...h, name: h.publicLabel || h.name })),
       );
     });
-    app.patch('/api/hosts/:id', auth, admin, recent, (req, res) => {
-      const host = get(req.scope, 'hosts', req.params.id),
+    app.patch('/api/hosts/:id', auth, admin, recent, async (req, res) => {
+      const host = await get(req.scope, 'hosts', req.params.id),
         x = req.body || {};
       if (!host) return res.status(404).json({ error: 'Not found' });
       if (
@@ -285,9 +301,9 @@ export async function createApplication(environment = process.env, { maintenance
         publicLabel: x.publicLabel || '',
         publicVisible: x.publicVisible,
       };
-      tx(() => {
-        put(req.scope, 'hosts', saved);
-        audit(
+      await tx(async () => {
+        await put(req.scope, 'hosts', saved);
+        await audit(
           req.scope,
           req.user.id,
           'HOST_DIRECTORY_UPDATED',
@@ -297,14 +313,17 @@ export async function createApplication(environment = process.env, { maintenance
       });
       res.json(saved);
     });
-    app.get('/api/users', auth, admin, (req, res) =>
+    app.get('/api/users', auth, admin, async (req, res) =>
       res.json(
-        db
-          .prepare(
-            'SELECT user_id FROM memberships WHERE tenant_id=? AND site_id=? ORDER BY name LIMIT 1000',
-          )
-          .all(...scoped(req.scope))
-          .map((r) => safeUser(member(req.scope, r.user_id))),
+        await Promise.all(
+          (
+            await db
+              .prepare(
+                'SELECT user_id FROM memberships WHERE tenant_id=? AND site_id=? ORDER BY name LIMIT 1000',
+              )
+              .all(...scoped(req.scope))
+          ).map(async (r) => safeUser(await member(req.scope, r.user_id))),
+        ),
       ),
     );
     app.post(
@@ -327,42 +346,46 @@ export async function createApplication(environment = process.env, { maintenance
             .status(400)
             .json({ error: 'Valid name, email, role and password of 16–1024 characters required' });
         if (
-          db
-            .prepare('SELECT COUNT(*) AS n FROM memberships WHERE tenant_id=? AND site_id=?')
-            .get(...scoped(req.scope)).n >= 1000
+          (
+            await db
+              .prepare('SELECT COUNT(*) AS n FROM memberships WHERE tenant_id=? AND site_id=?')
+              .get(...scoped(req.scope))
+          ).n >= 1000
         )
           return res.status(409).json({ error: 'Site user capacity reached' });
         const passwordHash = await hashPassword(x.password);
-        const actor = member(req.scope, req.user.id);
+        const actor = await member(req.scope, req.user.id);
         if (!actor || actor.role !== 'admin' || actor.membership_status !== 'active')
           return res.status(403).json({ error: 'Forbidden' });
         try {
           const id = randomUUID();
-          tx(() => {
-            db.prepare(
-              'INSERT INTO users(id,email,name,role,department,title,status,password_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
-            ).run(
-              id,
-              normalize(x.email),
-              x.name.trim(),
-              x.role,
-              x.department || '',
-              x.title || '',
-              'active',
-              passwordHash,
-              new Date().toISOString(),
-            );
-            grant(req.scope, {
+          await tx(async () => {
+            await db
+              .prepare(
+                'INSERT INTO users(id,email,name,role,department,title,status,password_hash,created_at) VALUES (?,?,?,?,?,?,?,?,?)',
+              )
+              .run(
+                id,
+                normalize(x.email),
+                x.name.trim(),
+                x.role,
+                x.department || '',
+                x.title || '',
+                'active',
+                passwordHash,
+                new Date().toISOString(),
+              );
+            await grant(req.scope, {
               id,
               name: x.name.trim(),
               role: x.role,
               department: x.department || '',
               title: x.title || '',
             });
-            syncHost(req.scope, member(req.scope, id));
-            audit(req.scope, req.user.id, 'USER_CREATED', id);
+            await syncHost(req.scope, await member(req.scope, id));
+            await audit(req.scope, req.user.id, 'USER_CREATED', id);
           });
-          res.status(201).json(safeUser(member(req.scope, id)));
+          res.status(201).json(safeUser(await member(req.scope, id)));
         } catch (error) {
           if (String(error).includes('UNIQUE'))
             return res.status(409).json({
@@ -373,8 +396,8 @@ export async function createApplication(environment = process.env, { maintenance
         }
       }),
     );
-    app.patch('/api/users/:id', auth, admin, recent, (req, res) => {
-      const old = member(req.scope, req.params.id),
+    app.patch('/api/users/:id', auth, admin, recent, async (req, res) => {
+      const old = await member(req.scope, req.params.id),
         x = req.body || {};
       if (!old) return res.status(404).json({ error: 'Not found' });
       if (
@@ -387,71 +410,70 @@ export async function createApplication(environment = process.env, { maintenance
         return res.status(400).json({ error: 'Invalid update' });
       if (old.id === req.user.id && (x.role === 'staff' || x.status === 'suspended'))
         return res.status(409).json({ error: 'Cannot demote or suspend yourself' });
-      tx(() => {
-        db.prepare(
-          'UPDATE memberships SET name=?,role=?,department=?,title=?,status=? WHERE user_id=? AND tenant_id=? AND site_id=?',
-        ).run(
-          x.name ?? old.display_name,
-          x.role ?? old.role,
-          x.department ?? old.display_department,
-          x.title ?? old.display_title,
-          x.status ?? old.membership_status,
-          old.id,
-          ...scoped(req.scope),
-        );
-        if (x.status === 'suspended' || (x.role && x.role !== old.role)) {
-          db.prepare('DELETE FROM sessions WHERE user_id=? AND tenant_id=? AND site_id=?').run(
+      await tx(async () => {
+        await db
+          .prepare(
+            'UPDATE memberships SET name=?,role=?,department=?,title=?,status=? WHERE user_id=? AND tenant_id=? AND site_id=?',
+          )
+          .run(
+            x.name ?? old.display_name,
+            x.role ?? old.role,
+            x.department ?? old.display_department,
+            x.title ?? old.display_title,
+            x.status ?? old.membership_status,
             old.id,
             ...scoped(req.scope),
           );
-          db.prepare(
-            'DELETE FROM auth_challenges WHERE user_id=? AND tenant_id=? AND site_id=?',
-          ).run(old.id, ...scoped(req.scope));
+        if (x.status === 'suspended' || (x.role && x.role !== old.role)) {
+          await db
+            .prepare('DELETE FROM sessions WHERE user_id=? AND tenant_id=? AND site_id=?')
+            .run(old.id, ...scoped(req.scope));
+          await db
+            .prepare('DELETE FROM auth_challenges WHERE user_id=? AND tenant_id=? AND site_id=?')
+            .run(old.id, ...scoped(req.scope));
         }
-        syncHost(req.scope, member(req.scope, old.id));
-        audit(req.scope, req.user.id, 'USER_UPDATED', old.id);
+        await syncHost(req.scope, await member(req.scope, old.id));
+        await audit(req.scope, req.user.id, 'USER_UPDATED', old.id);
       });
-      res.json(safeUser(member(req.scope, old.id)));
+      res.json(safeUser(await member(req.scope, old.id)));
     });
-    app.delete('/api/users/:id', auth, admin, recent, (req, res) => {
+    app.delete('/api/users/:id', auth, admin, recent, async (req, res) => {
       if (req.params.id === req.user.id)
         return res.status(409).json({ error: 'Cannot delete yourself' });
-      if (!member(req.scope, req.params.id)) return res.status(404).json({ error: 'Not found' });
-      tx(() => {
-        db.prepare('DELETE FROM sessions WHERE user_id=? AND tenant_id=? AND site_id=?').run(
-          req.params.id,
-          ...scoped(req.scope),
-        );
-        db.prepare('DELETE FROM auth_challenges WHERE user_id=? AND tenant_id=? AND site_id=?').run(
-          req.params.id,
-          ...scoped(req.scope),
-        );
-        db.prepare('DELETE FROM memberships WHERE user_id=? AND tenant_id=? AND site_id=?').run(
-          req.params.id,
-          ...scoped(req.scope),
-        );
-        remove(req.scope, 'hosts', req.params.id);
-        if (!db.prepare('SELECT 1 FROM memberships WHERE user_id=?').get(req.params.id))
-          db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
-        audit(req.scope, req.user.id, 'SITE_MEMBERSHIP_DELETED', req.params.id);
+      if (!(await member(req.scope, req.params.id)))
+        return res.status(404).json({ error: 'Not found' });
+      await tx(async () => {
+        await db
+          .prepare('DELETE FROM sessions WHERE user_id=? AND tenant_id=? AND site_id=?')
+          .run(req.params.id, ...scoped(req.scope));
+        await db
+          .prepare('DELETE FROM auth_challenges WHERE user_id=? AND tenant_id=? AND site_id=?')
+          .run(req.params.id, ...scoped(req.scope));
+        await db
+          .prepare('DELETE FROM memberships WHERE user_id=? AND tenant_id=? AND site_id=?')
+          .run(req.params.id, ...scoped(req.scope));
+        await remove(req.scope, 'hosts', req.params.id);
+        if (!(await db.prepare('SELECT 1 FROM memberships WHERE user_id=?').get(req.params.id)))
+          await db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
+        await audit(req.scope, req.user.id, 'SITE_MEMBERSHIP_DELETED', req.params.id);
       });
       res.json({ ok: true });
     });
-    app.get('/api/data', auth, (req, res) => {
+    app.get('/api/data', auth, async (req, res) => {
       const offset = Number(req.query.offset || 0);
       if (!Number.isSafeInteger(offset) || offset < 0)
         return res.status(400).json({ error: 'Invalid offset' });
       const logs =
         req.user.role === 'admin'
-          ? db
+          ? await db
               .prepare(
                 'SELECT * FROM audit_chain WHERE tenant_id=? AND site_id=? ORDER BY seq DESC LIMIT 500 OFFSET ?',
               )
               .all(...scoped(req.scope), offset)
           : [];
       res.json({
-        visitors: req.user.role === 'admin' ? list(req.scope, 'visitors', { offset }) : [],
-        invitations: list(req.scope, 'invitations', {
+        visitors: req.user.role === 'admin' ? await list(req.scope, 'visitors', { offset }) : [],
+        invitations: await list(req.scope, 'invitations', {
           offset,
           ...(req.user.role === 'staff' ? { owner: req.user.id } : {}),
         }),
@@ -467,20 +489,25 @@ export async function createApplication(environment = process.env, { maintenance
         })),
         users:
           req.user.role === 'admin' && offset === 0
-            ? db
-                .prepare('SELECT user_id FROM memberships WHERE tenant_id=? AND site_id=?')
-                .all(...scoped(req.scope))
-                .map((r) => safeUser(member(req.scope, r.user_id)))
+            ? await Promise.all(
+                (
+                  await db
+                    .prepare('SELECT user_id FROM memberships WHERE tenant_id=? AND site_id=?')
+                    .all(...scoped(req.scope))
+                ).map(async (r) => safeUser(await member(req.scope, r.user_id))),
+              )
             : [],
         pageSize: 500,
       });
     });
-    const capacity = (req, res, next) =>
-      db
-        .prepare(
-          "SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=? AND kind IN ('visitors','invitations')",
-        )
-        .get(...scoped(req.scope)).n >= config.maxRecords
+    const capacity = async (req, res, next) =>
+      (
+        await db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=? AND kind IN ('visitors','invitations')",
+          )
+          .get(...scoped(req.scope))
+      ).n >= config.maxRecords
         ? res.status(503).json({ error: 'Site record capacity reached; contact reception' })
         : next();
     app.post(
@@ -488,7 +515,7 @@ export async function createApplication(environment = process.env, { maintenance
       auth,
       capacity,
       rate('invite-user', 50, 3600000, (req) => req.user.id),
-      (req, res) => {
+      async (req, res) => {
         const x = req.body || {},
           allowed = [
             'id',
@@ -521,7 +548,7 @@ export async function createApplication(environment = process.env, { maintenance
           !/^([01]\d|2[0-3]):[0-5]\d$/.test(x.expectedTime || '')
         )
           return res.status(400).json({ error: 'Invalid invitation fields' });
-        const host = get(req.scope, 'hosts', x.hostEmployeeId);
+        const host = await get(req.scope, 'hosts', x.hostEmployeeId);
         if (!host) return res.status(400).json({ error: 'Unknown host' });
         if (req.user.role !== 'admin' && host.userId !== req.user.id)
           return res.status(403).json({ error: 'Cannot invite for another host' });
@@ -559,27 +586,27 @@ export async function createApplication(environment = process.env, { maintenance
           createdByUserId: req.user.id,
           expiresAt: new Date(end).toISOString(),
         };
-        tx(() => {
-          put(req.scope, 'invitations', entry, end);
-          audit(req.scope, req.user.id, 'INVITE_CREATED', entry.id);
+        await tx(async () => {
+          await put(req.scope, 'invitations', entry, end);
+          await audit(req.scope, req.user.id, 'INVITE_CREATED', entry.id);
         });
         res.status(201).json(entry);
       },
     );
-    const usable = (scope, code) => {
+    const usable = async (scope, code) => {
       if (typeof code !== 'string' || !/^[A-F0-9]{32}$/i.test(code)) return null;
-      const i = list(scope, 'invitations', { code, limit: 1 })[0];
+      const i = (await list(scope, 'invitations', { code, limit: 1 }))[0];
       return i &&
         i.status === 'pending' &&
         Date.parse(i.expiresAt) > Date.now() &&
-        get(scope, 'hosts', i.hostEmployeeId)
+        (await get(scope, 'hosts', i.hostEmployeeId))
         ? i
         : null;
     };
-    app.post('/api/invitations/lookup', rate('lookup', 10, 60000), (req, res) => {
-      const i = usable(req.scope, req.body?.inviteCode);
+    app.post('/api/invitations/lookup', rate('lookup', 10, 60000), async (req, res) => {
+      const i = await usable(req.scope, req.body?.inviteCode);
       if (!i) return res.status(404).json({ error: 'Invitation unavailable' });
-      const host = get(req.scope, 'hosts', i.hostEmployeeId),
+      const host = await get(req.scope, 'hosts', i.hostEmployeeId),
         label =
           req.scope.publicDirectory && host.publicVisible
             ? publicHost({ ...host, name: host.publicLabel || host.name })
@@ -595,24 +622,21 @@ export async function createApplication(environment = process.env, { maintenance
         expectedTime: i.expectedTime,
       });
     });
-    app.post('/api/checkin/challenge', rate('proof-issue', 20, 60000), (req, res) => {
-      db.prepare('DELETE FROM public_challenges WHERE expires<=?').run(Date.now());
-      if (db.prepare('SELECT COUNT(*) AS n FROM public_challenges').get().n >= 5000)
+    app.post('/api/checkin/challenge', rate('proof-issue', 20, 60000), async (req, res) => {
+      await db.prepare('DELETE FROM public_challenges WHERE expires<=?').run(Date.now());
+      if ((await db.prepare('SELECT COUNT(*) AS n FROM public_challenges').get()).n >= 5000)
         return res.status(503).json({ error: 'Reception busy; retry later' });
       const token = randomBytes(32).toString('base64url');
-      db.prepare('INSERT INTO public_challenges VALUES (?,?,?,?,?)').run(
-        digest(token),
-        ...scoped(req.scope),
-        digest(req.ip),
-        Date.now() + 120000,
-      );
+      await db
+        .prepare('INSERT INTO public_challenges VALUES (?,?,?,?,?)')
+        .run(digest(token), ...scoped(req.scope), digest(req.ip), Date.now() + 120000);
       res.json({ token, difficulty: config.proofDifficulty, expiresInSeconds: 120 });
     });
     app.post(
       '/api/checkin',
       rate('checkin', 10, 60000),
       rate('checkin-global', 100, 3600000, () => 'installation'),
-      (req, res) => {
+      async (req, res) => {
         const x = req.body || {};
         const allowed = [
           'fullName',
@@ -648,7 +672,7 @@ export async function createApplication(environment = process.env, { maintenance
           return res
             .status(400)
             .json({ error: 'Invalid check-in or outdated privacy acknowledgement' });
-        const host = get(req.scope, 'hosts', x.hostEmployeeId);
+        const host = await get(req.scope, 'hosts', x.hostEmployeeId);
         if (!host) return res.status(400).json({ error: 'Unknown host' });
         const fingerprint = keys.blind(
           req.scope.scopeId,
@@ -664,7 +688,7 @@ export async function createApplication(environment = process.env, { maintenance
           ]),
         );
         const requestHash = keys.blind(req.scope.scopeId, x.idempotencyKey),
-          existing = db
+          existing = await db
             .prepare(
               'SELECT * FROM idempotency WHERE key_hash=? AND tenant_id=? AND site_id=? AND expires>?',
             )
@@ -674,38 +698,61 @@ export async function createApplication(environment = process.env, { maintenance
             return res
               .status(409)
               .json({ error: 'Submission key already used for different details' });
-          const saved = get(req.scope, 'visitors', existing.visitor_id);
+          const saved = await get(req.scope, 'visitors', existing.visitor_id);
           return saved
             ? res.status(201).json(saved)
             : res.status(410).json({ error: 'Registration no longer available' });
         }
         if (
-          db
-            .prepare(
-              "SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=? AND kind IN ('visitors','invitations')",
-            )
-            .get(...scoped(req.scope)).n >= config.maxRecords
+          (
+            await db
+              .prepare(
+                "SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=? AND kind IN ('visitors','invitations')",
+              )
+              .get(...scoped(req.scope))
+          ).n >= config.maxRecords
         )
           return res.status(503).json({ error: 'Site record capacity reached; contact reception' });
-        const proof = x.proof,
-          challenge =
-            proof &&
-            text(proof.token, 100, true) &&
-            text(proof.answer, 20, true) &&
-            db
-              .prepare(
-                'SELECT * FROM public_challenges WHERE token_hash=? AND tenant_id=? AND site_id=? AND source_hash=? AND expires>?',
-              )
-              .get(digest(proof.token), ...scoped(req.scope), digest(req.ip), Date.now());
-        if (
-          !challenge ||
-          !digest(`${proof.token}:${proof.answer}`).startsWith('0'.repeat(config.proofDifficulty))
-        )
-          return res
-            .status(400)
-            .json({ error: 'Reception verification expired; retry the submission' });
-        const result = tx(() => {
-          const invite = x.inviteCode ? usable(req.scope, x.inviteCode) : null,
+        const result = await tx(async () => {
+          const retry = await db
+            .prepare(
+              'SELECT * FROM idempotency WHERE key_hash=? AND tenant_id=? AND site_id=? AND expires>?',
+            )
+            .get(requestHash, ...scoped(req.scope), Date.now());
+          if (retry) {
+            if (retry.fingerprint !== fingerprint)
+              return { error: 'Submission key already used for different details' };
+            const visitor = await get(req.scope, 'visitors', retry.visitor_id);
+            return visitor
+              ? { visitor, replayed: true }
+              : { error: 'Registration no longer available' };
+          }
+          if (
+            (
+              await db
+                .prepare(
+                  "SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=? AND kind IN ('visitors','invitations')",
+                )
+                .get(...scoped(req.scope))
+            ).n >= config.maxRecords
+          )
+            return { error: 'Site record capacity reached; contact reception' };
+          const proof = x.proof,
+            challenge =
+              proof &&
+              text(proof.token, 100, true) &&
+              text(proof.answer, 20, true) &&
+              (await db
+                .prepare(
+                  'SELECT * FROM public_challenges WHERE token_hash=? AND tenant_id=? AND site_id=? AND source_hash=? AND expires>?',
+                )
+                .get(digest(proof.token), ...scoped(req.scope), digest(req.ip), Date.now()));
+          if (
+            !challenge ||
+            !digest(`${proof.token}:${proof.answer}`).startsWith('0'.repeat(config.proofDifficulty))
+          )
+            return { status: 400, error: 'Reception verification expired; retry the submission' };
+          const invite = x.inviteCode ? await usable(req.scope, x.inviteCode) : null,
             today = new Intl.DateTimeFormat('en-CA', {
               timeZone: 'Africa/Lagos',
               year: 'numeric',
@@ -723,15 +770,17 @@ export async function createApplication(environment = process.env, { maintenance
           if (!invite && !req.scope.publicDirectory && host.id !== 'reception')
             return { error: 'Use an invitation or contact reception for this host' };
           if (
-            list(req.scope, 'visitors', {
-              email: x.email,
-              host: host.id,
-              status: 'checked_in',
-              limit: 1,
-            }).length
+            (
+              await list(req.scope, 'visitors', {
+                email: x.email,
+                host: host.id,
+                status: 'checked_in',
+                limit: 1,
+              })
+            ).length
           )
             return { error: 'An active visit already exists; contact reception' };
-          const consumed = db
+          const consumed = await db
             .prepare('DELETE FROM public_challenges WHERE token_hash=?')
             .run(digest(proof.token));
           if (!consumed.changes) return { error: 'Reception verification already used' };
@@ -766,55 +815,52 @@ export async function createApplication(environment = process.env, { maintenance
             tenantId: req.scope.tenantId,
             siteId: req.scope.siteId,
           };
-          put(req.scope, 'visitors', v, expires);
+          await put(req.scope, 'visitors', v, expires);
           if (invite) {
             invite.status = 'checked_in';
             invite.visitorId = v.id;
-            put(req.scope, 'invitations', invite, Date.parse(invite.expiresAt));
+            await put(req.scope, 'invitations', invite, Date.parse(invite.expiresAt));
           }
-          db.prepare('INSERT INTO idempotency VALUES (?,?,?,?,?,?)').run(
-            requestHash,
-            ...scoped(req.scope),
-            fingerprint,
-            v.id,
-            Date.now() + 86400000,
-          );
-          audit(req.scope, 'public', 'CHECK_IN', v.id);
+          await db
+            .prepare('INSERT INTO idempotency VALUES (?,?,?,?,?,?)')
+            .run(requestHash, ...scoped(req.scope), fingerprint, v.id, Date.now() + 86400000);
+          await audit(req.scope, 'public', 'CHECK_IN', v.id);
           return { visitor: v };
         });
-        if (result.error) return res.status(409).json({ error: result.error });
-        res.status(201).json(result.visitor);
+        if (result.error) return res.status(result.status || 409).json({ error: result.error });
+        res.status(result.replayed ? 200 : 201).json(result.visitor);
       },
     );
-    app.patch('/api/visitors/:id/checkout', auth, admin, (req, res) => {
-      const v = get(req.scope, 'visitors', req.params.id);
-      if (!v) return res.status(404).json({ error: 'Not found' });
-      v.status = 'checked_out';
-      v.checkOutTime = new Date().toISOString();
-      v.accessStatus = 'revoked';
-      tx(() => {
-        put(req.scope, 'visitors', v);
-        audit(req.scope, req.user.id, 'CHECK_OUT', v.id, 'Online gate permission revoked');
+    app.patch('/api/visitors/:id/checkout', auth, admin, async (req, res) => {
+      const v = await tx(async () => {
+        const v = await get(req.scope, 'visitors', req.params.id);
+        if (!v) return null;
+        v.status = 'checked_out';
+        v.checkOutTime = new Date().toISOString();
+        v.accessStatus = 'revoked';
+        await put(req.scope, 'visitors', v);
+        await audit(req.scope, req.user.id, 'CHECK_OUT', v.id, 'Online gate permission revoked');
+        return v;
       });
+      if (!v) return res.status(404).json({ error: 'Not found' });
       res.json(v);
     });
-    app.post('/api/visitors/:id/authorize', auth, admin, recent, (req, res) => {
+    app.post('/api/visitors/:id/authorize', auth, admin, recent, async (req, res) => {
       if (!config.gateEnabled)
         return res.status(409).json({ error: 'Gate integration is disabled' });
-      const v = get(req.scope, 'visitors', req.params.id);
-      if (!v || v.status !== 'checked_in')
-        return res.status(409).json({ error: 'No active visit' });
-      v.accessStatus = 'authorized';
-      v.accessExpiresAt = new Date(
-        Math.min(Date.parse(v.retentionExpiryDate), Date.now() + config.gateHours * 3600000),
-      ).toISOString();
-      tx(() => {
-        put(req.scope, 'visitors', v);
-        audit(req.scope, req.user.id, 'ACCESS_AUTHORIZED', v.id);
+      const v = await tx(async () => {
+        const v = await get(req.scope, 'visitors', req.params.id);
+        if (!v || v.status !== 'checked_in') return null;
+        v.accessStatus = 'authorized';
+        v.accessExpiresAt = new Date(Date.now() + config.gateHours * 3600000).toISOString();
+        await put(req.scope, 'visitors', v);
+        await audit(req.scope, req.user.id, 'GATE_PASS_AUTHORIZED', v.id);
+        return v;
       });
+      if (!v) return res.status(404).json({ error: 'Active visitor not found' });
       res.json(v);
     });
-    app.post('/api/gate/verify', rate('gate-source', 120, 60000), (req, res) => {
+    app.post('/api/gate/verify', rate('gate-source', 120, 60000), async (req, res) => {
       const token = req.get('authorization')?.replace(/^Bearer /, '');
       const device =
         config.gateEnabled &&
@@ -831,7 +877,9 @@ export async function createApplication(environment = process.env, { maintenance
           typeof reference === 'string' && reference.startsWith('SECUREPASS-REFERENCE:')
             ? reference.slice(21)
             : req.body?.badgeId;
-      const v = text(badge, 100, true) ? list(req.scope, 'visitors', { badge, limit: 1 })[0] : null;
+      const v = text(badge, 100, true)
+        ? (await list(req.scope, 'visitors', { badge, limit: 1 }))[0]
+        : null;
       const allowed = !!(
         v &&
         v.status === 'checked_in' &&
@@ -839,8 +887,8 @@ export async function createApplication(environment = process.env, { maintenance
         Date.parse(v.accessExpiresAt) > Date.now() &&
         Date.parse(v.retentionExpiryDate) > Date.now()
       );
-      if (allowed) audit(req.scope, `device:${device.deviceId}`, 'GATE_ALLOW', v.id);
-      else metric(req.scope, 'gate_denied');
+      if (allowed) await audit(req.scope, `device:${device.deviceId}`, 'GATE_ALLOW', v.id);
+      else await metric(req.scope, 'gate_denied');
       res.json({
         allowed,
         decisionId: randomUUID(),
@@ -850,32 +898,38 @@ export async function createApplication(environment = process.env, { maintenance
       });
     });
     registerPrivacy(app, config, store, { auth, admin, recent });
-    const auditStatus = (scope) => {
-      assertIntegrity();
+    const auditStatus = async (scope) => {
+      await assertIntegrity();
       return {
         ok: true,
-        siteEntries: db
-          .prepare('SELECT COUNT(*) AS n FROM audit_chain WHERE tenant_id=? AND site_id=?')
-          .get(...scoped(scope)).n,
+        siteEntries: (
+          await db
+            .prepare('SELECT COUNT(*) AS n FROM audit_chain WHERE tenant_id=? AND site_id=?')
+            .get(...scoped(scope))
+        ).n,
       };
     };
-    app.get('/api/audit/verify', auth, admin, (req, res) => res.json(auditStatus(req.scope)));
-    app.get('/api/security/metrics', auth, admin, (req, res) =>
+    app.get('/api/audit/verify', auth, admin, async (req, res) =>
+      res.json(await auditStatus(req.scope)),
+    );
+    app.get('/api/security/metrics', auth, admin, async (req, res) =>
       res.json({
-        counters: db
+        counters: await db
           .prepare('SELECT event,count,last_at FROM security_metrics WHERE scope=?')
           .all(req.scope.scopeId),
-        audit: auditStatus(req.scope),
+        audit: await auditStatus(req.scope),
         storage: {
-          records: db
-            .prepare('SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=?')
-            .get(...scoped(req.scope)).n,
+          records: (
+            await db
+              .prepare('SELECT COUNT(*) AS n FROM secure_records WHERE tenant_id=? AND site_id=?')
+              .get(...scoped(req.scope))
+          ).n,
           capacity: config.maxRecords,
         },
       }),
     );
-    app.post('/api/purge', auth, admin, (req, res) => {
-      store.purge();
+    app.post('/api/purge', auth, admin, async (req, res) => {
+      await store.purge();
       res.json({ ok: true });
     });
     app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
@@ -887,8 +941,8 @@ export async function createApplication(environment = process.env, { maintenance
         res.sendFile(path.resolve(config.env.SECUREPASS_DIST_DIR || 'dist', 'index.html')),
       );
     }
-    app.use((error, req, res, next) => {
-      metric(req.scope, 'request_error');
+    app.use(async (error, req, res, next) => {
+      await metric(req.scope, 'request_error').catch(() => {});
       const status = [400, 409, 413, 503].includes(error.status) ? error.status : 500;
       console.error(
         JSON.stringify({
@@ -912,13 +966,13 @@ export async function createApplication(environment = process.env, { maintenance
     });
     let timer;
     if (!maintenance) {
-      store.purge();
-      timer = setInterval(() => {
+      await store.purge();
+      timer = setInterval(async () => {
         try {
-          assertIntegrity();
-          store.purge();
+          await assertIntegrity();
+          await store.purge();
         } catch (error) {
-          metric(null, 'integrity_or_purge_failed');
+          await metric(null, 'integrity_or_purge_failed').catch(() => {});
           console.error(
             JSON.stringify({ event: 'integrity_or_purge_failed', code: error.code || 'internal' }),
           );
@@ -930,13 +984,13 @@ export async function createApplication(environment = process.env, { maintenance
       app,
       config,
       store,
-      close() {
+      async close() {
         clearInterval(timer);
-        store.close();
+        await store.close();
       },
     };
   } catch (error) {
-    store.close();
+    await store.close();
     throw error;
   }
 }
