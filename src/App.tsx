@@ -566,12 +566,6 @@ export default function App() {
               {NDPA_ORGANIZATION_INFO.companyName}
             </span>{' '}
             · {NDPA_ORGANIZATION_INFO.facilityName}
-            {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
-              <div className="text-[11px] text-slate-600 mt-0.5">
-                Controller registration (as configured):{' '}
-                {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-              </div>
-            )}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[11px]">
             <span aria-hidden="true" className="text-slate-700">
