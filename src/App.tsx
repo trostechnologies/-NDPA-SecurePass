@@ -19,6 +19,7 @@ import { MobileSelfCheckIn } from './components/Mobile/MobileSelfCheckIn';
 import { ReceptionQRPosterModal } from './components/Mobile/ReceptionQRPosterModal';
 import { LoginPage } from './components/Auth/LoginPage';
 import { UserManagement } from './components/Admin/UserManagement';
+import { ReceptionDesk } from './components/Reception/ReceptionDesk';
 import { AppTab } from './components/Header';
 
 import {
@@ -50,17 +51,36 @@ function readTheme(): Theme {
   }
 }
 
+// Each role lands on its own home screen; the server still enforces every permission.
+function homeTab(role: AppUser['role']): AppTab {
+  if (role === 'admin') return 'access_logs';
+  if (role === 'reception') return 'reception';
+  return 'invitations';
+}
+
+// Staff sign-in lives at /app (or ?app=1); the public site shows no sign-in link.
+function isAppEntry(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    /^\/app(\/|$)/.test(window.location.pathname) ||
+    new URLSearchParams(window.location.search).get('app') === '1'
+  );
+}
+
 export default function App() {
   // Check if URL specifies mobile mode (?mode=mobile)
   const isInitialMobile =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('mode') === 'mobile';
+  const isAppPath = isAppEntry();
 
   // Authentication & RBAC State
   const [users, setUsers] = useState<AppUser[]>([]);
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
 
-  const [activeTab, setActiveTab] = useState<AppTab>(isInitialMobile ? 'mobile' : 'kiosk');
+  const [activeTab, setActiveTab] = useState<AppTab>(
+    isInitialMobile ? 'mobile' : isAppPath ? 'login' : 'kiosk',
+  );
 
   const [visitors, setVisitors] = useState<Visitor[]>([]);
   const [hosts, setHosts] = useState<HostEmployee[]>([]);
@@ -114,6 +134,7 @@ export default function App() {
         try {
           const session = await api<{ user: AppUser }>('/session');
           setCurrentUser(session.user);
+          if (isAppPath && !isInitialMobile) setActiveTab(homeTab(session.user.role));
           await loadPrivate();
         } catch {
           setCurrentUser(null);
@@ -179,7 +200,8 @@ export default function App() {
     });
     submission.current = null;
     setPendingInviteCode('');
-    if (currentUser?.role === 'admin') setVisitors((v) => [saved, ...v]);
+    if (currentUser?.role === 'admin' || currentUser?.role === 'reception')
+      setVisitors((v) => [saved, ...v]);
     triggerToast('Visitor registered.');
     return saved;
   };
@@ -249,7 +271,7 @@ export default function App() {
       await loadPrivate();
       setHosts(await api<HostEmployee[]>('/hosts'));
     });
-    setActiveTab(user.role === 'admin' ? 'access_logs' : 'invitations');
+    setActiveTab(homeTab(user.role));
   };
   const clearPrivate = () => {
     setCurrentUser(null);
@@ -282,7 +304,13 @@ export default function App() {
     void run(async () => {
       await api('/logout', { method: 'POST' });
       clearPrivate();
-      setActiveTab('kiosk');
+      // Return to the staff sign-in entry point, keeping any ?site= selection.
+      if (!isAppEntry()) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('app', '1');
+        window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
+      }
+      setActiveTab('login');
     });
   };
   const handleCreateUser = async (user: AppUser): Promise<void> => {
@@ -310,11 +338,17 @@ export default function App() {
   // RBAC Permission Check
   const isStaffRestricted =
     currentUser?.role === 'staff' &&
-    ['access_logs', 'compliance', 'muster', 'users'].includes(activeTab);
+    ['access_logs', 'compliance', 'muster', 'users', 'reception'].includes(activeTab);
+
+  const isReceptionRestricted =
+    currentUser?.role === 'reception' &&
+    ['access_logs', 'compliance', 'muster', 'users', 'invitations'].includes(activeTab);
 
   const isUnauthenticatedRestricted =
     !currentUser &&
-    ['access_logs', 'compliance', 'muster', 'users', 'invitations'].includes(activeTab);
+    ['access_logs', 'compliance', 'muster', 'users', 'invitations', 'reception'].includes(
+      activeTab,
+    );
 
   if (startupError)
     return (
@@ -410,6 +444,40 @@ export default function App() {
           </div>
         )}
 
+        {/* ACCESS DENIED: RECEPTION ROLE RESTRICTION GUARD */}
+        {isReceptionRestricted && (
+          <div className="max-w-xl mx-auto py-12 text-center space-y-4 bg-slate-900 border border-slate-800 rounded-3xl p-8">
+            <h2 className="text-xl font-bold text-white tracking-tight">
+              Reception Access Restricted
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+              Reception accounts can check visitors in and out from the Reception Desk. Other
+              areas require an Administrator profile.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('reception')}
+              className="px-4 py-2 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-xl transition-colors"
+            >
+              Go to Reception Desk
+            </button>
+          </div>
+        )}
+
+        {/* Reception Desk (Reception & Admin) */}
+        {activeTab === 'reception' &&
+          (currentUser?.role === 'reception' || currentUser?.role === 'admin') && (
+            <ReceptionDesk
+              hosts={hosts}
+              visitors={visitors}
+              onCheckedIn={(saved) => {
+                setVisitors((v) => [saved, ...v]);
+                triggerToast('Visitor checked in.');
+              }}
+              onCheckOut={handleCheckOut}
+            />
+          )}
+
         {/* ACCESS DENIED: UNAUTHENTICATED GUARD */}
         {isUnauthenticatedRestricted && (
           <LoginPage
@@ -480,7 +548,7 @@ export default function App() {
         )}
 
         {/* Tab 3: Live Access Logs (Admin Only) */}
-        {activeTab === 'access_logs' && !isStaffRestricted && !isUnauthenticatedRestricted && (
+        {activeTab === 'access_logs' && !isStaffRestricted && !isReceptionRestricted && !isUnauthenticatedRestricted && (
           <LiveAccessLogs
             visitors={visitors}
             onCheckOut={handleCheckOut}
@@ -490,7 +558,7 @@ export default function App() {
         )}
 
         {/* Tab 4: NDPA Compliance Hub (Admin Only) */}
-        {activeTab === 'compliance' && !isStaffRestricted && !isUnauthenticatedRestricted && (
+        {activeTab === 'compliance' && !isStaffRestricted && !isReceptionRestricted && !isUnauthenticatedRestricted && (
           <div className="space-y-8">
             <NDPAComplianceHub
               visitors={visitors}
@@ -514,7 +582,7 @@ export default function App() {
         )}
 
         {/* Tab 5: Guest Invitations (Admin & Staff) */}
-        {activeTab === 'invitations' && !isUnauthenticatedRestricted && (
+        {activeTab === 'invitations' && !isReceptionRestricted && !isUnauthenticatedRestricted && (
           <PreRegistrationManager
             invitations={invitations}
             hosts={
@@ -528,12 +596,12 @@ export default function App() {
         )}
 
         {/* Tab 6: Emergency Evacuation Muster List (Admin Only) */}
-        {activeTab === 'muster' && !isStaffRestricted && !isUnauthenticatedRestricted && (
+        {activeTab === 'muster' && !isStaffRestricted && !isReceptionRestricted && !isUnauthenticatedRestricted && (
           <EmergencyMusterList visitors={visitors} />
         )}
 
         {/* Tab 7: Enterprise User Profile Management (Admin Only) */}
-        {activeTab === 'users' && !isStaffRestricted && !isUnauthenticatedRestricted && (
+        {activeTab === 'users' && !isStaffRestricted && !isReceptionRestricted && !isUnauthenticatedRestricted && (
           <UserManagement
             users={users}
             currentUser={currentUser}

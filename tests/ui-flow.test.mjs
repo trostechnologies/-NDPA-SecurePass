@@ -31,7 +31,7 @@ for(const kind of ['kiosk','mobile'])test(`${kind}: rejected save preserves inpu
  let mode='reject',calls=0,resolve;const saved={id:'server-id',badgeId:'server-badge',passCode:'server-pass',fullName:'Guest',organization:'Org',hostEmployeeName:'Host',securityClearance:'Standard',checkInTime:new Date().toISOString()};
  const complete=()=>{calls++;return mode==='reject'?Promise.reject(Error('Network failed')):new Promise(r=>resolve=r);};
  const c=component(kind==='kiosk'?'src/components/Kiosk/VisitorKiosk.tsx':'src/components/Mobile/MobileSelfCheckIn.tsx',kind==='kiosk'?'VisitorKiosk':'MobileSelfCheckIn',{hosts,invitations:[],onCheckInComplete:complete});
- c.input(kind==='kiosk'?'Babatunde':'Amina','Guest');c.input(kind==='kiosk'?'b.fashola':'a.bello','guest@example.test');c.input('+234 803','12345678');
+ c.input(kind==='kiosk'?'Your full name':'Your full name','Guest');c.input(kind==='kiosk'?'you@yourcompany.com':'you@yourcompany.com','guest@example.test');c.input('Your phone number','12345678');
  await c.click(kind==='kiosk'?'Proceed to Host Selection':'Continue to Host Selection');
  if(kind==='kiosk'){await c.click('Continue');await c.click('Continue to Privacy Review');}else await c.click('Consent');
  const checkbox=c.find(n=>n.type==='input'&&n.props.type==='checkbox');assert.equal(checkbox.props.checked,false);checkbox.props.onChange({target:{checked:true}});

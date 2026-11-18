@@ -6,6 +6,8 @@
 import React, { useState, useRef } from 'react';
 import QRCode from 'qrcode';
 import { PreRegistrationInvite, HostEmployee } from '../../types/visitor';
+import { NDPA_ORGANIZATION_INFO } from '../../utils/ndpaCompliance';
+import { formatInviteCode } from '../../utils/inviteCode';
 import {
   Ticket,
   Plus,
@@ -103,7 +105,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
         inviteCode: newCode,
         guestName: guestName.trim(),
         guestEmail: guestEmail.trim(),
-        guestPhone: guestPhone.trim() || '+234 800 000 0000',
+        guestPhone: guestPhone.trim(),
         guestOrganization: guestOrg.trim() || 'Guest Organization',
         hostEmployeeId: host.id,
         hostEmployeeName: host.name,
@@ -221,7 +223,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   </div>
                   {inv.parkingReserved && (
                     <div className="text-[11px] text-emerald-400 flex items-center gap-1 pt-1 border-t border-slate-800">
-                      <Car className="w-3 h-3" /> VIP Basement Parking Allocated
+                      <Car className="w-3 h-3" /> Visitor parking reserved
                     </div>
                   )}
                 </div>
@@ -231,7 +233,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   <div className="text-xs">
                     <span className="text-slate-500 block text-[10px] font-mono">INVITE CODE:</span>
                     <span className="text-sm font-mono font-bold text-emerald-400">
-                      {inv.inviteCode}
+                      {formatInviteCode(inv.inviteCode)}
                     </span>
                   </div>
                   <button
@@ -301,7 +303,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                     required
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
-                    placeholder="e.g. Dr. Ngozi Okonjo"
+                    placeholder="Guest full name"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                   />
                 </div>
@@ -312,7 +314,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                     required
                     value={guestEmail}
                     onChange={(e) => setGuestEmail(e.target.value)}
-                    placeholder="e.g. guest@partner.com"
+                    placeholder="guest@theircompany.com"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                   />
                 </div>
@@ -322,7 +324,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                     type="tel"
                     value={guestPhone}
                     onChange={(e) => setGuestPhone(e.target.value)}
-                    placeholder="+234 803 000 0000"
+                    placeholder="Guest phone number"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                   />
                 </div>
@@ -391,7 +393,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                   onChange={(e) => setParkingReserved(e.target.checked)}
                   className="rounded border-slate-700 text-emerald-500 focus:ring-emerald-400"
                 />
-                <span>Reserve VIP Visitor Parking Stall in Tower Basement</span>
+                <span>Reserve visitor parking</span>
               </label>
 
               <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
@@ -446,7 +448,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
               <div className="mt-2 text-center">
                 <span className="text-[10px] text-slate-400 block font-mono">INVITE CODE:</span>
                 <span className="text-base font-mono font-bold text-slate-900 tracking-wider">
-                  {previewInvite.inviteCode}
+                  {formatInviteCode(previewInvite.inviteCode)}
                 </span>
               </div>
             </div>
@@ -468,7 +470,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Facility:</span>
-                <span className="text-slate-700">Victoria Island Corporate Tower</span>
+                <span className="text-slate-700">{NDPA_ORGANIZATION_INFO.facilityName}</span>
               </div>
             </div>
 

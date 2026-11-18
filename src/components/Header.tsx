@@ -5,10 +5,18 @@
 
 import React from 'react';
 import { AppUser } from '../types/visitor';
-import { LogIn, LogOut, User, ShieldCheck, Lock } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
 export type AppTab =
-  'kiosk' | 'mobile' | 'login' | 'access_logs' | 'compliance' | 'invitations' | 'muster' | 'users';
+  | 'kiosk'
+  | 'mobile'
+  | 'login'
+  | 'reception'
+  | 'access_logs'
+  | 'compliance'
+  | 'invitations'
+  | 'muster'
+  | 'users';
 
 interface HeaderProps {
   activeTab: AppTab;
@@ -27,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const isAdmin = currentUser?.role === 'admin';
   const isStaff = currentUser?.role === 'staff';
+  const isReception = currentUser?.role === 'reception';
 
   return (
     <header className="flex items-center justify-between gap-8 px-6 py-4 border-b border-slate-800 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40">
@@ -37,6 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
           e.preventDefault();
           if (isStaff) {
             setActiveTab('invitations');
+          } else if (isReception) {
+            setActiveTab('reception');
           } else {
             setActiveTab('kiosk');
           }
@@ -69,16 +80,20 @@ export const Header: React.FC<HeaderProps> = ({
             >
               Mobile Self Check-In
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('login')}
-              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 ${
-                activeTab === 'login' ? 'text-emerald-400 font-semibold' : ''
-              }`}
-            >
-              Staff &amp; Admin Sign In
-            </button>
           </>
+        )}
+
+        {/* RECEPTION VIEW (Reception Desk only) */}
+        {isReception && (
+          <button
+            type="button"
+            onClick={() => setActiveTab('reception')}
+            className={`hover:text-white transition-colors whitespace-nowrap shrink-0 ${
+              activeTab === 'reception' ? 'text-emerald-400 font-semibold' : ''
+            }`}
+          >
+            Reception Desk
+          </button>
         )}
 
         {/* STAFF MEMBER VIEW (Restricted to Guest Invitations) */}
@@ -116,6 +131,15 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               Visitor Kiosk
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('reception')}
+              className={`hover:text-white transition-colors whitespace-nowrap shrink-0 ${
+                activeTab === 'reception' ? 'text-emerald-400 font-semibold' : ''
+              }`}
+            >
+              Reception Desk
             </button>
             <button
               type="button"
@@ -179,7 +203,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {currentUser.name}
                 </div>
                 <div className="text-[10px] font-mono text-emerald-400 mt-0.5 leading-none">
-                  {isAdmin ? 'ADMIN' : 'STAFF (INVITES ONLY)'}
+                  {isAdmin ? 'ADMIN' : isReception ? 'RECEPTION' : 'STAFF (INVITES ONLY)'}
                 </div>
               </div>
             </div>
@@ -202,14 +226,6 @@ export const Header: React.FC<HeaderProps> = ({
               className="hidden sm:inline-flex px-3 py-2 text-xs font-medium text-slate-300 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors whitespace-nowrap"
             >
               Reception QR
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('login')}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-colors whitespace-nowrap shadow-sm"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Staff Login</span>
             </button>
           </div>
         )}

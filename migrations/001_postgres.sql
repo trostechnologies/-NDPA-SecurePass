@@ -4,7 +4,7 @@ SET LOCAL search_path TO securepass, pg_catalog;
   CREATE TABLE IF NOT EXISTS installation(key TEXT PRIMARY KEY,value TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS notice_versions(tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,version TEXT NOT NULL,hash TEXT NOT NULL,cipher TEXT NOT NULL,at TEXT NOT NULL,PRIMARY KEY(tenant_id,site_id,version));
   CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,name TEXT NOT NULL,role TEXT NOT NULL,department TEXT NOT NULL DEFAULT '',title TEXT NOT NULL DEFAULT '',status TEXT NOT NULL DEFAULT 'active',password_hash TEXT NOT NULL,created_at TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS memberships(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','staff')),status TEXT NOT NULL DEFAULT 'active',name TEXT NOT NULL,department TEXT NOT NULL DEFAULT '',title TEXT NOT NULL DEFAULT '',PRIMARY KEY(user_id,tenant_id,site_id));
+  CREATE TABLE IF NOT EXISTS memberships(user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('admin','reception','staff')),status TEXT NOT NULL DEFAULT 'active',name TEXT NOT NULL,department TEXT NOT NULL DEFAULT '',title TEXT NOT NULL DEFAULT '',PRIMARY KEY(user_id,tenant_id,site_id));
   CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires_at BIGINT NOT NULL,tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,created_at BIGINT NOT NULL,mfa_verified_at BIGINT NOT NULL DEFAULT 0);
   CREATE TABLE IF NOT EXISTS secure_records(tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,cipher TEXT NOT NULL,email_hash TEXT,code_hash TEXT,owner_id TEXT,visitor_id TEXT,badge_hash TEXT,host_id TEXT,status TEXT,expires BIGINT,created_at TEXT NOT NULL,PRIMARY KEY(tenant_id,site_id,kind,id));
   CREATE INDEX IF NOT EXISTS idx_records_expiry ON secure_records(expires);
@@ -25,6 +25,7 @@ SET LOCAL search_path TO securepass, pg_catalog;
   CREATE TABLE IF NOT EXISTS audit_chain(seq BIGINT PRIMARY KEY,at TEXT NOT NULL,tenant_id TEXT NOT NULL,site_id TEXT NOT NULL,actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,detail TEXT NOT NULL,previous_hash TEXT NOT NULL,mac TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS audit_checkpoint(id BIGINT PRIMARY KEY CHECK(id=1),seq BIGINT NOT NULL,mac TEXT NOT NULL,receipt TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS security_metrics(scope TEXT NOT NULL,event TEXT NOT NULL,count BIGINT NOT NULL,last_at TEXT NOT NULL,PRIMARY KEY(scope,event));
+ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_role_check;  ALTER TABLE memberships ADD CONSTRAINT memberships_role_check CHECK(role IN ('admin','reception','staff'));
 CREATE OR REPLACE FUNCTION securepass.reject_audit_mutation() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN RAISE EXCEPTION 'Audit rows are append-only'; END $$;
@@ -45,3 +46,4 @@ DO $$ BEGIN
   END IF;
 END $$;
 INSERT INTO securepass.schema_migrations(version,at) VALUES (3, CURRENT_TIMESTAMP::text) ON CONFLICT(version) DO NOTHING;
+INSERT INTO securepass.schema_migrations(version,at) VALUES (4, CURRENT_TIMESTAMP::text) ON CONFLICT(version) DO NOTHING;

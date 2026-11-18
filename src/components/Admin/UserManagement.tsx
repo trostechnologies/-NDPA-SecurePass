@@ -75,6 +75,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
 
   const adminCount = users.filter((u) => u.role === 'admin').length;
   const staffCount = users.filter((u) => u.role === 'staff').length;
+  const receptionCount = users.filter((u) => u.role === 'reception').length;
 
   const handleOpenCreate = () => {
     setFormName('');
@@ -253,6 +254,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({
           >
             Staff (Invites Only) ({staffCount})
           </button>
+          <button
+            type="button"
+            onClick={() => setRoleFilter('reception')}
+            className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors whitespace-nowrap ${
+              roleFilter === 'reception'
+                ? 'bg-amber-950/60 text-amber-300 font-semibold border border-amber-800 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Reception ({receptionCount})
+          </button>
         </div>
       </div>
 
@@ -319,6 +331,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                             <div className="text-[10px] text-slate-400">
                               Full Unrestricted Access
                             </div>
+                          </div>
+                        ) : user.role === 'reception' ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700">
+                              RECEPTION
+                            </span>
+                            <div className="text-[10px] text-slate-400">Reception Desk Only</div>
                           </div>
                         ) : (
                           <div className="space-y-0.5">
@@ -451,7 +470,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   required
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  placeholder="e.g. Babatunde Sanusi"
+                  placeholder="Full name"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                 />
               </div>
@@ -466,7 +485,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   value={formEmail}
                   readOnly={!!editingUser}
                   onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="a.user@example.com"
+                  placeholder="you@yourcompany.com"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                 />
               </div>
@@ -510,7 +529,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <label className="block text-slate-300 font-semibold mb-1.5">
                   Assigned RBAC Role &amp; Access Scope *
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div
                     onClick={() => setFormRole('staff')}
                     className={`p-3 rounded-xl border cursor-pointer transition-colors ${
@@ -520,10 +539,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     }`}
                   >
                     <div className="font-bold text-xs flex items-center gap-1">
-                      <Lock className="w-3.5 h-3.5" /> Staff Member
+                      <Lock className="w-3.5 h-3.5" /> Staff host
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
                       Access strictly restricted to Guest Invitations only.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setFormRole('reception')}
+                    className={`p-3 rounded-xl border cursor-pointer transition-colors ${
+                      formRole === 'reception'
+                        ? 'bg-amber-950/50 border-amber-500 text-amber-200'
+                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div className="font-bold text-xs">Reception</div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Reception Desk only: check visitors in and out.
                     </p>
                   </div>
 
@@ -651,7 +684,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <label className="block text-slate-300 font-semibold mb-1.5">
                   RBAC Role &amp; Permission Scope
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div
                     onClick={() => setFormRole('staff')}
                     className={`p-3 rounded-xl border cursor-pointer transition-colors ${
@@ -661,10 +694,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     }`}
                   >
                     <div className="font-bold text-xs flex items-center gap-1">
-                      <Lock className="w-3.5 h-3.5" /> Staff Member
+                      <Lock className="w-3.5 h-3.5" /> Staff host
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
                       Guest Invitations portal only.
+                    </p>
+                  </div>
+
+                  <div
+                    onClick={() => setFormRole('reception')}
+                    className={`p-3 rounded-xl border cursor-pointer transition-colors ${
+                      formRole === 'reception'
+                        ? 'bg-amber-950/50 border-amber-500 text-amber-200'
+                        : 'bg-slate-950 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <div className="font-bold text-xs">Reception</div>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Reception Desk only: check visitors in and out.
                     </p>
                   </div>
 

@@ -23,7 +23,7 @@ test('initial page, MFA login, user creation, staff routing, reload, suspension,
       })
     ).status(),
   ).toBe(400);
-  await page.getByRole('button', { name: 'Staff Login', exact: true }).click();
+  await page.goto('/app');
   await page.getByLabel('Work email').fill('browser-admin@example.test');
   await page.getByLabel('Password', { exact: true }).fill('wrong-password');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -44,7 +44,7 @@ test('initial page, MFA login, user creation, staff routing, reload, suspension,
   await page.getByRole('button', { name: 'User Management', exact: true }).click();
   await page.getByRole('button', { name: 'Add New User Profile' }).click();
   const form = page.locator('form');
-  await form.getByPlaceholder('e.g. Babatunde Sanusi').fill('Browser Staff');
+  await form.getByPlaceholder('Full name').fill('Browser Staff');
   await form.locator('input[type=email]').fill('browser-staff@example.test');
   await form.locator('input[type=password]').fill('browser-staff-password-12345');
   await form.getByRole('button', { name: 'Create User Profile', exact: true }).click();
@@ -53,8 +53,7 @@ test('initial page, MFA login, user creation, staff routing, reload, suspension,
   await expect(page.getByRole('button', { name: 'User Management', exact: true })).toBeVisible();
   const staffContext = await browser.newContext();
   const staff = await staffContext.newPage();
-  await staff.goto(baseURL!);
-  await staff.getByRole('button', { name: 'Staff Login', exact: true }).click();
+  await staff.goto(baseURL! + '/app');
   await staff.getByLabel('Work email').fill('browser-staff@example.test');
   await staff.getByLabel('Password', { exact: true }).fill('browser-staff-password-12345');
   await staff.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -75,12 +74,12 @@ test('initial page, MFA login, user creation, staff routing, reload, suspension,
     'Suspended',
   );
   await staff.reload();
-  await expect(staff.getByRole('button', { name: 'Staff Login', exact: true })).toBeVisible();
+  await expect(staff.getByRole('heading', { name: 'SecurePass staff sign-in' })).toBeVisible();
   expect((await staff.request.get('/api/session')).status()).toBe(401);
   await staffContext.close();
   await page.getByTitle('Sign Out', { exact: true }).click();
   expect((await page.request.get('/api/users')).status()).toBe(401);
-  await page.getByRole('button', { name: 'Staff Login', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'SecurePass staff sign-in' })).toBeVisible();
   await page.getByLabel('Work email').fill('browser-admin@example.test');
   await page.getByLabel('Password', { exact: true }).fill('browser-admin-password-12345');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

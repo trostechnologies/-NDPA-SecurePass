@@ -135,7 +135,8 @@ async function main() {
       scope = config.sites.find((s) => s.key === args.site);
     if (!user) throw Error('Identity not found');
     if (command === 'grant') {
-      if (!['admin', 'staff'].includes(args.role)) throw Error('--role must be admin or staff');
+      if (!['admin', 'reception', 'staff'].includes(args.role))
+        throw Error('--role must be admin, reception or staff');
       await tx(async () => {
         await grant(scope, user, args.role);
         await db

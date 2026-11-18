@@ -277,12 +277,15 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
 
               {hasInvite && (
                 <div className="space-y-2 pt-1">
+                  <p className="text-[11px] text-slate-400">
+                    Enter the invite code your host shared with you.
+                  </p>
                   <div className="flex gap-2">
                     <input
                       type="text"
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                      placeholder="e.g. INV-7821"
+                      placeholder="Enter your invite code"
                       className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                     />
                     <button
@@ -309,7 +312,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   required
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Amina Bello"
+                  placeholder="Your full name"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400 min-h-[44px]"
                 />
               </div>
@@ -323,7 +326,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   required
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="e.g. +234 803 123 4567"
+                  placeholder="Your phone number"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 min-h-[44px]"
                 />
               </div>
@@ -337,7 +340,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. a.bello@company.com"
+                  placeholder="you@yourcompany.com"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 min-h-[44px]"
                 />
               </div>
@@ -363,7 +366,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   type="text"
                   value={vehiclePlate}
                   onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                  placeholder="e.g. EKY-402-AB"
+                  placeholder="Your vehicle plate (optional)"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 font-mono placeholder-slate-500 focus:outline-none focus:border-emerald-400 min-h-[44px]"
                 />
               </div>
