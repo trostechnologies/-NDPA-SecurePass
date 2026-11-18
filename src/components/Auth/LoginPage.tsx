@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { AppUser } from '../../types/visitor';
 import { api, jsonBody } from '../../api';
+import { RECEPTION_ROLE_ENABLED } from '../../utils/features';
 
 export interface AuthResult {
   user?: AppUser;
@@ -96,7 +97,11 @@ export const LoginPage: React.FC<{
     { id: 'admin', label: 'Admin', hint: 'Administrators: access logs, privacy and user management.' },
     { id: 'reception', label: 'Reception', hint: 'Reception: check visitors in and out.' },
     { id: 'staff', label: 'Staff', hint: 'Staff hosts: invite your guests in advance.' },
-  ] as const;
+  ].filter((p) => RECEPTION_ROLE_ENABLED || p.id !== 'reception') as ReadonlyArray<{
+    id: 'admin' | 'reception' | 'staff';
+    label: string;
+    hint: string;
+  }>;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
@@ -141,7 +146,11 @@ export const LoginPage: React.FC<{
         />
       ) : (
         <>
-          <div role="tablist" aria-label="Sign-in type" className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-950 border border-slate-800">
+          <div
+            role="tablist"
+            aria-label="Sign-in type"
+            className={`grid ${portals.length === 3 ? 'grid-cols-3' : 'grid-cols-2'} gap-1 p-1 rounded-xl bg-slate-950 border border-slate-800`}
+          >
             {portals.map((p) => (
               <button
                 key={p.id}

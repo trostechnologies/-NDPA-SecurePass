@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { api, jsonBody } from '../../api';
 import { AppUser, UserRole } from '../../types/visitor';
+import { RECEPTION_ROLE_ENABLED } from '../../utils/features';
 import {
   Users,
   UserPlus,
@@ -529,7 +530,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <label className="block text-slate-300 font-semibold mb-1.5">
                   Assigned RBAC Role &amp; Access Scope *
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div
+                  className={`grid grid-cols-1 ${RECEPTION_ROLE_ENABLED ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2`}
+                >
                   <div
                     onClick={() => setFormRole('staff')}
                     className={`p-3 rounded-xl border cursor-pointer transition-colors ${
@@ -546,19 +549,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     </p>
                   </div>
 
-                  <div
-                    onClick={() => setFormRole('reception')}
-                    className={`p-3 rounded-xl border cursor-pointer transition-colors ${
-                      formRole === 'reception'
-                        ? 'bg-amber-950/50 border-amber-500 text-amber-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <div className="font-bold text-xs">Reception</div>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Reception Desk only: check visitors in and out.
-                    </p>
-                  </div>
+                  {RECEPTION_ROLE_ENABLED && (
+                    <div
+                      onClick={() => setFormRole('reception')}
+                      className={`p-3 rounded-xl border cursor-pointer transition-colors ${
+                        formRole === 'reception'
+                          ? 'bg-amber-950/50 border-amber-500 text-amber-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <div className="font-bold text-xs">Reception</div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Reception Desk only: check visitors in and out.
+                      </p>
+                    </div>
+                  )}
 
                   <div
                     onClick={() => setFormRole('admin')}
@@ -684,7 +689,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                 <label className="block text-slate-300 font-semibold mb-1.5">
                   RBAC Role &amp; Permission Scope
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div
+                  className={`grid grid-cols-1 ${RECEPTION_ROLE_ENABLED ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2`}
+                >
                   <div
                     onClick={() => setFormRole('staff')}
                     className={`p-3 rounded-xl border cursor-pointer transition-colors ${
@@ -701,19 +708,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     </p>
                   </div>
 
-                  <div
-                    onClick={() => setFormRole('reception')}
-                    className={`p-3 rounded-xl border cursor-pointer transition-colors ${
-                      formRole === 'reception'
-                        ? 'bg-amber-950/50 border-amber-500 text-amber-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400'
-                    }`}
-                  >
-                    <div className="font-bold text-xs">Reception</div>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      Reception Desk only: check visitors in and out.
-                    </p>
-                  </div>
+                  {RECEPTION_ROLE_ENABLED && (
+                    <div
+                      onClick={() => setFormRole('reception')}
+                      className={`p-3 rounded-xl border cursor-pointer transition-colors ${
+                        formRole === 'reception'
+                          ? 'bg-amber-950/50 border-amber-500 text-amber-200'
+                          : 'bg-slate-950 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <div className="font-bold text-xs">Reception</div>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Reception Desk only: check visitors in and out.
+                      </p>
+                    </div>
+                  )}
 
                   <div
                     onClick={() => setFormRole('admin')}
