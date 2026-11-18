@@ -81,7 +81,7 @@ export interface PreRegistrationInvite {
   parkingReserved: boolean;
 }
 
-export type UserRole = 'admin' | 'staff';
+export type UserRole = 'admin' | 'reception' | 'staff';
 
 export interface AppUser {
   id: string;
