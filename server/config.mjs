@@ -85,11 +85,11 @@ export function loadConfig(input) {
       );
   }
   const secure = env.SECUREPASS_COOKIE_SECURE !== 'false';
-  if (
-    production &&
-    (!secure || !origin.startsWith('https://') || env.SECUREPASS_MFA_REQUIRED === 'none')
-  )
-    throw Error('Production requires HTTPS, Secure cookies and privileged MFA');
+  if (production && (!secure || !origin.startsWith('https://')))
+    throw Error('Production requires HTTPS and Secure cookies');
+  const mfaRequired = env.SECUREPASS_MFA_REQUIRED || (production ? 'admin' : 'none');
+  if (!['none', 'admin', 'all'].includes(mfaRequired))
+    throw Error('SECUREPASS_MFA_REQUIRED must be none, admin or all');
   if (
     production &&
     (!env.SECUREPASS_DATA_KEYS ||
@@ -138,7 +138,7 @@ export function loadConfig(input) {
     sites,
     secure,
     number,
-    mfaRequired: production ? 'admin' : env.SECUREPASS_MFA_REQUIRED || 'none',
+    mfaRequired,
     sessionMs: number('SECUREPASS_SESSION_MINUTES', 480, 1440) * 60000,
     maxRecords: number('SECUREPASS_MAX_RECORDS', 10000, 10000),
     maxAudits: number('SECUREPASS_MAX_AUDITS', 50000, 500000),
