@@ -277,8 +277,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
               <span>Redeem Pre-Registered Guest Pass</span>
             </div>
             <p className="text-xs text-slate-400">
-              Enter the unique invite code sent to your email by your host for expedited 10-second
-              check-in.
+              Enter the invite code your host shared with you.
             </p>
           </div>
 
@@ -288,7 +287,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                 type="text"
                 value={inviteCodeInput}
                 onChange={(e) => setInviteCodeInput(e.target.value.toUpperCase())}
-                placeholder="e.g. INV-7821"
+                placeholder="Enter your invite code"
                 className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
               />
               <button
@@ -418,7 +417,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                       required
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
-                      placeholder="e.g. Babatunde Fashola"
+                      placeholder="Your full name"
                       className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                     />
                   </div>
@@ -433,7 +432,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="e.g. b.fashola@enterprise.com.ng"
+                    placeholder="you@yourcompany.com"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                   />
                 </div>
@@ -447,7 +446,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="e.g. +234 803 123 4567"
+                    placeholder="Your phone number"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                   />
                 </div>
@@ -476,7 +475,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     type="text"
                     value={vehiclePlate}
                     onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                    placeholder="e.g. LAG-902-BD"
+                    placeholder="Your vehicle plate (optional)"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 font-mono focus:outline-none focus:border-emerald-400"
                   />
                 </div>

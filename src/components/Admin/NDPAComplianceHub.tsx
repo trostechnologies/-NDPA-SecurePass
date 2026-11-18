@@ -270,7 +270,7 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
               type="text"
               value={dsarSearch}
               onChange={(e) => setDsarSearch(e.target.value)}
-              placeholder="Search visitor name or pass code (e.g. Femi Babalola or NG-VIS-4102)..."
+              placeholder="Search visitor name or pass code..."
               className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
             />
           </div>
