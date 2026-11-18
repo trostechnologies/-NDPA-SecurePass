@@ -16,6 +16,9 @@ import {
   asyncRoute,
 } from './auth.mjs';
 import { registerPrivacy } from './privacy.mjs';
+import { newInviteCode, normalizeInviteCode } from './invite-codes.mjs';
+
+const ROLES = ['admin', 'reception', 'staff'];
 import { openJournal, replayGovernance, verifyGovernance } from './journal.mjs';
 export async function createApplication(
   environment = process.env,
@@ -183,6 +186,10 @@ export async function createApplication(
     });
     app.use('/api', express.json({ limit: '16kb' }));
     const { auth, admin, recent, required } = await registerAuth(app, config, store, rate);
+    const desk = (req, res, next) =>
+      req.user.role === 'admin' || req.user.role === 'reception'
+        ? next()
+        : res.status(403).json({ error: 'Forbidden' });
     const publicHost = (h) => ({
       id: h.id,
       name: h.id === 'reception' ? 'Reception' : h.name,
@@ -337,7 +344,7 @@ export async function createApplication(
           !emailOK(x.email) ||
           !text(x.password, 1024, true) ||
           x.password.length < 16 ||
-          !['admin', 'staff'].includes(x.role) ||
+          !ROLES.includes(x.role) ||
           !text(x.name, 120, true) ||
           !text(x.department ?? '', 120) ||
           !text(x.title ?? '', 120)
@@ -401,14 +408,17 @@ export async function createApplication(
         x = req.body || {};
       if (!old) return res.status(404).json({ error: 'Not found' });
       if (
-        (x.role !== undefined && !['admin', 'staff'].includes(x.role)) ||
+        (x.role !== undefined && !ROLES.includes(x.role)) ||
         (x.status !== undefined && !['active', 'suspended'].includes(x.status)) ||
         ['name', 'department', 'title'].some(
           (k) => x[k] !== undefined && !text(x[k], 120, k === 'name'),
         )
       )
         return res.status(400).json({ error: 'Invalid update' });
-      if (old.id === req.user.id && (x.role === 'staff' || x.status === 'suspended'))
+      if (
+        old.id === req.user.id &&
+        ((x.role !== undefined && x.role !== 'admin') || x.status === 'suspended')
+      )
         return res.status(409).json({ error: 'Cannot demote or suspend yourself' });
       await tx(async () => {
         await db
@@ -472,11 +482,19 @@ export async function createApplication(
               .all(...scoped(req.scope), offset)
           : [];
       res.json({
-        visitors: req.user.role === 'admin' ? await list(req.scope, 'visitors', { offset }) : [],
-        invitations: await list(req.scope, 'invitations', {
-          offset,
-          ...(req.user.role === 'staff' ? { owner: req.user.id } : {}),
-        }),
+        visitors:
+          req.user.role === 'admin'
+            ? await list(req.scope, 'visitors', { offset })
+            : req.user.role === 'reception'
+              ? await list(req.scope, 'visitors', { status: 'checked_in', offset })
+              : [],
+        invitations:
+          req.user.role === 'reception'
+            ? []
+            : await list(req.scope, 'invitations', {
+                offset,
+                ...(req.user.role === 'staff' ? { owner: req.user.id } : {}),
+              }),
         auditLogs: logs.map((a) => ({
           id: String(a.seq),
           timestamp: a.at,
@@ -568,7 +586,7 @@ export async function createApplication(
           return res.status(400).json({ error: 'Visit date must be within the retention window' });
         const entry = {
           id: randomUUID(),
-          inviteCode: randomBytes(16).toString('hex').toUpperCase(),
+          inviteCode: newInviteCode(),
           guestName: x.guestName.trim(),
           guestEmail: normalize(x.guestEmail),
           guestPhone: x.guestPhone || '',
@@ -593,8 +611,9 @@ export async function createApplication(
         res.status(201).json(entry);
       },
     );
-    const usable = async (scope, code) => {
-      if (typeof code !== 'string' || !/^[A-F0-9]{32}$/i.test(code)) return null;
+    const usable = async (scope, input) => {
+      const code = normalizeInviteCode(input);
+      if (!code) return null;
       const i = (await list(scope, 'invitations', { code, limit: 1 }))[0];
       return i &&
         i.status === 'pending' &&
@@ -622,6 +641,140 @@ export async function createApplication(
         expectedTime: i.expectedTime,
       });
     });
+    // Reception desk: authenticated lookup returns the invitation details for auto-fill.
+    app.post(
+      '/api/reception/lookup',
+      auth,
+      desk,
+      rate('desk-lookup', 60, 60000, (req) => req.user.id),
+      async (req, res) => {
+        const i = await usable(req.scope, req.body?.inviteCode);
+        if (!i) return res.status(404).json({ error: 'Invitation unavailable' });
+        await audit(req.scope, req.user.id, 'INVITE_LOOKUP', i.id, 'Reception desk');
+        res.json({
+          invitation: {
+            id: i.id,
+            inviteCode: i.inviteCode,
+            guestName: i.guestName,
+            guestEmail: i.guestEmail,
+            guestPhone: i.guestPhone || '',
+            guestOrganization: i.guestOrganization || '',
+            hostEmployeeId: i.hostEmployeeId,
+            hostEmployeeName: i.hostEmployeeName,
+            expectedDate: i.expectedDate,
+            expectedTime: i.expectedTime,
+            purpose: i.purpose || '',
+          },
+        });
+      },
+    );
+    app.post(
+      '/api/reception/checkin',
+      auth,
+      desk,
+      capacity,
+      rate('desk-checkin', 300, 3600000, (req) => req.user.id),
+      async (req, res) => {
+        const x = req.body || {};
+        const allowed = [
+          'fullName',
+          'email',
+          'phone',
+          'organization',
+          'purpose',
+          'hostEmployeeId',
+          'generalConsentGranted',
+          'noticeVersion',
+          'inviteCode',
+        ];
+        if (
+          Object.keys(x).some((key) => !allowed.includes(key)) ||
+          !text(x.fullName, 180, true) ||
+          !emailOK(x.email) ||
+          !text(x.phone, 40, true) ||
+          !text(x.organization ?? '', 160) ||
+          !text(x.purpose ?? '', 300) ||
+          x.generalConsentGranted !== true ||
+          x.noticeVersion !== req.scope.noticeVersion ||
+          !text(x.hostEmployeeId, 120, true) ||
+          (x.inviteCode !== undefined && x.inviteCode !== '' && !text(x.inviteCode, 80, true))
+        )
+          return res
+            .status(400)
+            .json({ error: 'Invalid check-in or outdated privacy acknowledgement' });
+        const host = await get(req.scope, 'hosts', x.hostEmployeeId);
+        if (!host) return res.status(400).json({ error: 'Unknown host' });
+        const result = await tx(async () => {
+          const invite = x.inviteCode ? await usable(req.scope, x.inviteCode) : null,
+            today = new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Africa/Lagos',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+            }).format(new Date());
+          if (
+            x.inviteCode &&
+            (!invite ||
+              invite.hostEmployeeId !== host.id ||
+              normalize(invite.guestEmail) !== normalize(x.email) ||
+              invite.expectedDate !== today)
+          )
+            return { error: 'Invitation unavailable, wrong date, or guest details do not match' };
+          if (
+            (
+              await list(req.scope, 'visitors', {
+                email: x.email,
+                host: host.id,
+                status: 'checked_in',
+                limit: 1,
+              })
+            ).length
+          )
+            return { error: 'An active visit already exists for this guest and host' };
+          const expires = Date.now() + req.scope.dataRetentionDays * 86400000;
+          const v = {
+            id: randomUUID(),
+            fullName: x.fullName.trim(),
+            email: normalize(x.email),
+            phone: x.phone.trim(),
+            organization: x.organization || '',
+            purpose: x.purpose || '',
+            hostEmployeeId: host.id,
+            hostEmployeeName: host.name,
+            hostDepartment: host.department,
+            hostFloor: host.floor || '',
+            visitType: invite ? 'pre_registered' : 'walk_in',
+            generalConsentGranted: true,
+            noticeVersion: req.scope.noticeVersion,
+            noticeHash: req.scope.noticeHash,
+            consentTimestamp: new Date().toISOString(),
+            hasBiometricPhoto: false,
+            biometricConsentGranted: false,
+            status: 'checked_in',
+            checkInTime: new Date().toISOString(),
+            retentionExpiryDate: new Date(expires).toISOString(),
+            passCode: randomBytes(12).toString('hex').toUpperCase(),
+            badgeId: randomBytes(24).toString('hex').toUpperCase(),
+            badgePrinted: false,
+            securityClearance: 'Standard',
+            wifiAccessGranted: false,
+            accessStatus: config.gateEnabled ? 'pending' : 'reception_only',
+            tenantId: req.scope.tenantId,
+            siteId: req.scope.siteId,
+          };
+          await put(req.scope, 'visitors', v, expires);
+          if (invite) {
+            invite.status = 'checked_in';
+            invite.visitorId = v.id;
+            await put(req.scope, 'invitations', invite, Date.parse(invite.expiresAt));
+          }
+          await audit(req.scope, req.user.id, 'CHECK_IN', v.id, 'Reception desk');
+          return { visitor: v };
+        });
+        if (result.error) return res.status(409).json({ error: result.error });
+        res.status(201).json(result.visitor);
+      },
+    );
     app.post('/api/checkin/challenge', rate('proof-issue', 20, 60000), async (req, res) => {
       await db.prepare('DELETE FROM public_challenges WHERE expires<=?').run(Date.now());
       if ((await db.prepare('SELECT COUNT(*) AS n FROM public_challenges').get()).n >= 5000)
@@ -831,7 +984,7 @@ export async function createApplication(
         res.status(result.replayed ? 200 : 201).json(result.visitor);
       },
     );
-    app.patch('/api/visitors/:id/checkout', auth, admin, async (req, res) => {
+    app.patch('/api/visitors/:id/checkout', auth, desk, async (req, res) => {
       const v = await tx(async () => {
         const v = await get(req.scope, 'visitors', req.params.id);
         if (!v) return null;
