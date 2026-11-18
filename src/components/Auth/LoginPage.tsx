@@ -89,6 +89,14 @@ export const LoginPage: React.FC<{
   const [reset, setReset] = useState(false),
     [resetToken, setResetToken] = useState(''),
     [newPassword, setNewPassword] = useState('');
+  // Presentational only: every choice uses the same sign-in, and the account's
+  // actual role decides where the user lands and what the server allows.
+  const [portal, setPortal] = useState<'admin' | 'reception' | 'staff'>('admin');
+  const portals = [
+    { id: 'admin', label: 'Admin', hint: 'Administrators: access logs, privacy and user management.' },
+    { id: 'reception', label: 'Reception', hint: 'Reception: check visitors in and out.' },
+    { id: 'staff', label: 'Staff', hint: 'Staff hosts: invite your guests in advance.' },
+  ] as const;
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (busy) return;
@@ -133,7 +141,28 @@ export const LoginPage: React.FC<{
         />
       ) : (
         <>
+          <div role="tablist" aria-label="Sign-in type" className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-950 border border-slate-800">
+            {portals.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                role="tab"
+                aria-selected={portal === p.id}
+                onClick={() => setPortal(p.id)}
+                className={`py-2 text-xs font-semibold rounded-lg transition-colors ${
+                  portal === p.id
+                    ? 'bg-emerald-400 text-slate-950'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <h1 className="text-2xl font-bold">SecurePass staff sign-in</h1>
+          <p className="text-xs text-slate-400">
+            {portals.find((p) => p.id === portal)?.hint}
+          </p>
           <form onSubmit={submit} className="space-y-4">
             {reset ? (
               <>
