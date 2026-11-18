@@ -1,3 +1,5 @@
+> Historical foundation report. Current implementation and verification: [REAUDIT_IMPLEMENTATION.md](REAUDIT_IMPLEMENTATION.md). Deployment instructions: [deploy/OPERATIONS.md](deploy/OPERATIONS.md).
+
 # Security remediation — 1 November 2026
 
 This source package addresses the ten findings in the accompanying SECURITY_AUDIT.md. It has not been deployed. The repository version is prepared on the security/audit-remediation branch.

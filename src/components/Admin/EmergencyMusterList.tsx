@@ -6,7 +6,15 @@
 import React, { useState } from 'react';
 import { Visitor } from '../../types/visitor';
 import { NDPA_ORGANIZATION_INFO } from '../../utils/ndpaCompliance';
-import { AlertTriangle, Printer, CheckSquare, Square, Building2, Phone, ShieldAlert } from 'lucide-react';
+import {
+  AlertTriangle,
+  Printer,
+  CheckSquare,
+  Square,
+  Building2,
+  Phone,
+  ShieldAlert,
+} from 'lucide-react';
 
 interface EmergencyMusterListProps {
   visitors: Visitor[];
@@ -42,7 +50,7 @@ export const EmergencyMusterList: React.FC<EmergencyMusterListProps> = ({ visito
   }, {});
 
   const totalActive = activeVisitors.length;
-  const totalAccounted = activeVisitors.filter(v => accountedIds.has(v.id)).length;
+  const totalAccounted = activeVisitors.filter((v) => accountedIds.has(v.id)).length;
 
   return (
     <div className="space-y-6">
@@ -60,8 +68,9 @@ export const EmergencyMusterList: React.FC<EmergencyMusterListProps> = ({ visito
               Live Building Evacuation &amp; Muster Roll-Call
             </h2>
             <p className="text-xs text-slate-300 mt-1 max-w-xl">
-              Real-time manifest of all visitors currently verified inside {NDPA_ORGANIZATION_INFO.facilityName}.
-              Use during emergency evacuations to verify all visitors at Muster Points A &amp; B.
+              Real-time manifest of all visitors currently verified inside{' '}
+              {NDPA_ORGANIZATION_INFO.facilityName}. Use during emergency evacuations to verify all
+              visitors at Muster Points A &amp; B.
             </p>
           </div>
         </div>
@@ -93,7 +102,9 @@ export const EmergencyMusterList: React.FC<EmergencyMusterListProps> = ({ visito
             {totalAccounted}
           </div>
           <span className="text-[11px] text-emerald-400/80 font-mono">
-            {totalActive > 0 ? `${Math.round((totalAccounted / totalActive) * 100)}% Verified` : 'Clear'}
+            {totalActive > 0
+              ? `${Math.round((totalAccounted / totalActive) * 100)}% Verified`
+              : 'Clear'}
           </span>
         </div>
 
@@ -111,7 +122,9 @@ export const EmergencyMusterList: React.FC<EmergencyMusterListProps> = ({ visito
         {totalActive === 0 ? (
           <div className="p-12 text-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400">
             <p className="text-sm font-medium">All visitors have checked out.</p>
-            <p className="text-xs text-slate-500 mt-1">Zero visitors currently logged in the facility.</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Zero visitors currently logged in the facility.
+            </p>
           </div>
         ) : (
           Object.entries(groupedByDept).map(([dept, visitorsInDept]) => (
@@ -160,7 +173,8 @@ export const EmergencyMusterList: React.FC<EmergencyMusterListProps> = ({ visito
                             </span>
                           </div>
                           <div className="text-xs text-slate-400">
-                            {v.organization} · Host: <strong className="text-slate-300">{v.hostEmployeeName}</strong>
+                            {v.organization} · Host:{' '}
+                            <strong className="text-slate-300">{v.hostEmployeeName}</strong>
                           </div>
                         </div>
                       </div>
@@ -172,7 +186,9 @@ export const EmergencyMusterList: React.FC<EmergencyMusterListProps> = ({ visito
                         </div>
                         {v.emergencyContactName && (
                           <div>
-                            <span className="text-slate-500 block text-[10px]">EMERGENCY NEXT-OF-KIN</span>
+                            <span className="text-slate-500 block text-[10px]">
+                              EMERGENCY NEXT-OF-KIN
+                            </span>
                             <span className="text-rose-300 font-medium">
                               {v.emergencyContactName} ({v.emergencyContactPhone || 'N/A'})
                             </span>

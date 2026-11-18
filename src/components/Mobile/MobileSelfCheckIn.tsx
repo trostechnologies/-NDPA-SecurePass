@@ -40,11 +40,18 @@ import {
   SmartphoneNfc,
 } from 'lucide-react';
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0]?.[0];
+  return (letters || '?').toUpperCase();
+}
+
 interface MobileSelfCheckInProps {
   hosts: HostEmployee[];
   invitations: PreRegistrationInvite[];
   onCheckInComplete: (newVisitor: Visitor, inviteCode?: string) => Promise<Visitor>;
   onExitMobileView?: () => void;
+  showStaffControls?: boolean;
 }
 
 export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
@@ -52,6 +59,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
   invitations,
   onCheckInComplete,
   onExitMobileView,
+  showStaffControls = false,
 }) => {
   // Mobile device container wrapper toggle (for desktop evaluators)
   const [deviceFrame, setDeviceFrame] = useState<boolean>(false);
@@ -64,9 +72,10 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
 
   // Visitor fields
   const submitting = useRef(false);
-  const [busy,setBusy]=useState(false);
-  const [submitError,setSubmitError]=useState('');
-  const [verifiedCode,setVerifiedCode]=useState('');
+  const [busy, setBusy] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [verifiedCode, setVerifiedCode] = useState('');
+  const [invitationHost, setInvitationHost] = useState<HostEmployee | null>(null);
   const [fullName, setFullName] = useState<string>('');
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
@@ -89,20 +98,32 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
   const [issuedPass, setIssuedPass] = useState<Visitor | null>(null);
   const [passQrDataUrl, setPassQrDataUrl] = useState<string>('');
 
-  const selectedHost = hosts.find((h) => h.id === selectedHostId) || hosts[0];
+  const selectedHost =
+    [...hosts, ...(invitationHost ? [invitationHost] : [])].find((h) => h.id === selectedHostId) ||
+    hosts[0];
 
   const filteredHosts = hosts.filter(
     (h) =>
       h.name.toLowerCase().includes(hostSearch.toLowerCase()) ||
-      h.department.toLowerCase().includes(hostSearch.toLowerCase())
+      h.department.toLowerCase().includes(hostSearch.toLowerCase()),
   );
 
   const handleLookupInvite = async () => {
-    setInviteError(null);setVerifiedCode('');
+    setInviteError(null);
+    setVerifiedCode('');
     try {
-      const found=await api<{hostEmployeeId:string}>('/invitations/lookup',{method:'POST',body:jsonBody({inviteCode:inviteCode.trim().toUpperCase()})});
-      setSelectedHostId(found.hostEmployeeId);setVerifiedCode(inviteCode.trim().toUpperCase());setHasInvite(false);setStep(1);
-    }catch(e){setInviteError(e instanceof Error?e.message:'Invitation unavailable');}
+      const found = await api<{ hostEmployeeId: string; publicHost: HostEmployee }>(
+        '/invitations/lookup',
+        { method: 'POST', body: jsonBody({ inviteCode: inviteCode.trim().toUpperCase() }) },
+      );
+      setInvitationHost(found.publicHost);
+      setSelectedHostId(found.hostEmployeeId);
+      setVerifiedCode(inviteCode.trim().toUpperCase());
+      setHasInvite(false);
+      setStep(1);
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : 'Invitation unavailable');
+    }
   };
   const handleFinalSubmit = async () => {
     if (!fullName || !email || !phone) {
@@ -114,63 +135,76 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       return;
     }
 
-    const host = hosts.find((h) => h.id === selectedHostId) || hosts[0];
-    if(!host){setSubmitError('Select a host.');return;}
-    if(submitting.current)return;
-    submitting.current=true;setBusy(true);setSubmitError('');
-    try {
-    const newVisitor: Visitor = {
-      id: `VIS-MOB-${Date.now()}`,
-      passCode: generatePassCode(),
-      fullName: fullName.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      organization: organization.trim() || 'Independent Visitor',
-      hostEmployeeId: host.id,
-      hostEmployeeName: host.name,
-      hostDepartment: host.department,
-      purpose: purpose.trim(),
-      visitType: verifiedCode ? 'pre_registered' : 'walk_in',
-      checkInTime: new Date().toISOString(),
-      status: 'checked_in',
-      hasBiometricPhoto: Boolean(photoUrl && biometricConsent),
-      photoUrl: photoUrl && biometricConsent ? photoUrl : undefined,
-      biometricConsentGranted: Boolean(photoUrl && biometricConsent),
-      generalConsentGranted: true,
-      consentTimestamp: new Date().toISOString(),
-      vehiclePlate: vehiclePlate.trim() || undefined,
-      badgePrinted: false,
-      retentionExpiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 60).toISOString(),
-      securityClearance: 'Standard',
-      wifiAccessGranted: false,
-      wifiCode: generateWifiCode(),
-      badgeId: generateBadgeId(),
-    };
-
-    const saved=await onCheckInComplete(newVisitor,verifiedCode||undefined);
-    setIssuedPass(saved);
-
-    // Generate Pass QR Code for mobile screen
-    setPassQrDataUrl('');
-    try {
-      const qr = await QRCode.toDataURL(
-        badgeReference(saved),
-        { width: 200, margin: 1 }
-      );
-      setPassQrDataUrl(qr);
-    } catch (e) {
-      console.error(e);
+    const host =
+      [...hosts, ...(invitationHost ? [invitationHost] : [])].find(
+        (h) => h.id === selectedHostId,
+      ) || hosts[0];
+    if (!host) {
+      setSubmitError('Select a host.');
+      return;
     }
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setSubmitError('');
+    try {
+      const newVisitor: Visitor = {
+        id: `VIS-MOB-${Date.now()}`,
+        passCode: generatePassCode(),
+        fullName: fullName.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
+        organization: organization.trim() || 'Independent Visitor',
+        hostEmployeeId: host.id,
+        hostEmployeeName: host.name,
+        hostDepartment: host.department,
+        purpose: purpose.trim(),
+        visitType: verifiedCode ? 'pre_registered' : 'walk_in',
+        checkInTime: new Date().toISOString(),
+        status: 'checked_in',
+        hasBiometricPhoto: Boolean(photoUrl && biometricConsent),
+        photoUrl: photoUrl && biometricConsent ? photoUrl : undefined,
+        biometricConsentGranted: Boolean(photoUrl && biometricConsent),
+        generalConsentGranted: true,
+        consentTimestamp: new Date().toISOString(),
+        vehiclePlate: vehiclePlate.trim() || undefined,
+        badgePrinted: false,
+        retentionExpiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 60).toISOString(),
+        securityClearance: 'Standard',
+        wifiAccessGranted: false,
+        wifiCode: generateWifiCode(),
+        badgeId: generateBadgeId(),
+      };
 
-    setStep(4); // Only a saved server record can reach the pass view.
-    }catch(e){setSubmitError(e instanceof Error?e.message:'Check-in failed');}
-    finally{submitting.current=false;setBusy(false);}
+      const saved = await onCheckInComplete(newVisitor, verifiedCode || undefined);
+      setIssuedPass(saved);
+
+      // Generate Pass QR Code for mobile screen
+      setPassQrDataUrl('');
+      try {
+        const qr = await QRCode.toDataURL(badgeReference(saved), { width: 200, margin: 1 });
+        setPassQrDataUrl(qr);
+      } catch (e) {
+        console.error(e);
+      }
+
+      setStep(4); // Only a saved server record can reach the pass view.
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : 'Check-in failed');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
   };
 
   // Content of the Mobile Self Check-In UI
   const mobileContent = (
     <div className="bg-slate-950 text-slate-100 min-h-[640px] flex flex-col justify-between">
-      {submitError&&<p role="alert" className="text-red-300 p-4">{submitError}</p>}
+      {submitError && (
+        <p role="alert" className="text-red-300 p-4">
+          {submitError}
+        </p>
+      )}
       {/* Mobile Top Navigation Bar */}
       <header className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -187,7 +221,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
           </div>
         </div>
 
-        {onExitMobileView && (
+        {showStaffControls && onExitMobileView && (
           <button
             type="button"
             onClick={onExitMobileView}
@@ -231,7 +265,10 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 </span>
                 <button
                   type="button"
-                onClick={() => {setHasInvite(!hasInvite);setVerifiedCode('');}}
+                  onClick={() => {
+                    setHasInvite(!hasInvite);
+                    setVerifiedCode('');
+                  }}
                   className="text-xs text-emerald-400 font-medium"
                 >
                   {hasInvite ? 'Enter Manually' : 'Redeem Code'}
@@ -256,9 +293,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                       Verify
                     </button>
                   </div>
-                  {inviteError && (
-                    <p className="text-[11px] text-amber-400">{inviteError}</p>
-                  )}
+                  {inviteError && <p className="text-[11px] text-amber-400">{inviteError}</p>}
                 </div>
               )}
             </div>
@@ -315,7 +350,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   type="text"
                   value={organization}
                   onChange={(e) => setOrganization(e.target.value)}
-                  placeholder="e.g. Zenith Bank / MTN Nigeria"
+                  placeholder="Your organisation"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 min-h-[44px]"
                 />
               </div>
@@ -384,12 +419,12 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <img
-                          src={h.avatar}
-                          alt={h.name}
-                          className="w-9 h-9 rounded-full object-cover border border-slate-700"
-                          referrerPolicy="no-referrer"
-                        />
+                        <div
+                          aria-hidden="true"
+                          className="w-9 h-9 flex-shrink-0 rounded-full border border-slate-700 bg-slate-800 text-slate-200 text-[11px] font-bold flex items-center justify-center"
+                        >
+                          {getInitials(h.name)}
+                        </div>
                         <div className="min-w-0">
                           <h4 className="text-xs font-semibold truncate text-slate-100">
                             {h.name}
@@ -416,11 +451,19 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 onChange={(e) => setPurpose(e.target.value)}
                 className="w-full px-3 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-emerald-400 min-h-[44px]"
               >
-                <option value="Business Meeting & Partnership">Business Meeting &amp; Partnership</option>
-                <option value="Official Advisory & Consultation">Official Advisory &amp; Consultation</option>
+                <option value="Business Meeting & Partnership">
+                  Business Meeting &amp; Partnership
+                </option>
+                <option value="Official Advisory & Consultation">
+                  Official Advisory &amp; Consultation
+                </option>
                 <option value="Executive Boardroom Briefing">Executive Boardroom Briefing</option>
-                <option value="Regulatory Inspection & Audit">Regulatory Inspection &amp; Audit</option>
-                <option value="Vendor / Delivery / Contractor">Vendor / Delivery / Contractor</option>
+                <option value="Regulatory Inspection & Audit">
+                  Regulatory Inspection &amp; Audit
+                </option>
+                <option value="Vendor / Delivery / Contractor">
+                  Vendor / Delivery / Contractor
+                </option>
                 <option value="Personal Appointment">Personal Appointment</option>
               </select>
             </div>
@@ -438,7 +481,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 onClick={() => setStep(3)}
                 className="w-2/3 h-12 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-[0.98] transition-transform"
               >
-                <span>Photo &amp; Consent</span>
+                <span>Privacy &amp; Consent</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -449,7 +492,9 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
         {step === 3 && (
           <div className="space-y-4">
             {/* NDPA Section 30 notice */}
-            <p className="text-sm text-slate-400">Photo collection is disabled. Continue without a photo.</p>
+            <p className="text-sm text-slate-400">
+              Photo collection is disabled. Continue without a photo.
+            </p>
 
             {/* Consent Checkbox */}
             <label className="flex items-start gap-2.5 p-3 bg-slate-900 border border-slate-800 rounded-xl cursor-pointer text-[11px] text-slate-300">
@@ -460,7 +505,8 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-emerald-400"
               />
               <span className="leading-relaxed">
-                {NDPA_ORGANIZATION_INFO.privacyNoticeText} I acknowledge notice version {NDPA_ORGANIZATION_INFO.noticeVersion}.
+                {NDPA_ORGANIZATION_INFO.privacyNoticeText} I acknowledge notice version{' '}
+                {NDPA_ORGANIZATION_INFO.noticeVersion}.
               </span>
             </label>
 
@@ -475,7 +521,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
               <button
                 type="button"
                 onClick={handleFinalSubmit}
-                  disabled={busy}
+                disabled={busy}
                 className="w-2/3 h-12 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-[0.98] transition-transform"
               >
                 <CheckCircle2 className="w-4 h-4" /> Check In &amp; Get Pass
@@ -556,7 +602,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   </div>
                 )}
                 <span className="text-[9px] font-mono font-bold tracking-wider text-slate-500">
-                  HOLD NEAR TURNSTILE SCANNER
+                  SHOW AT RECEPTION
                 </span>
               </div>
 
@@ -566,8 +612,12 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   <div className="flex items-center gap-2">
                     <Wifi className="w-4 h-4 text-emerald-400" />
                     <div>
-                      <div className="text-[10px] text-slate-400">Guest Wi-Fi (SSID: Zenith-Guest)</div>
-                      <div className="font-mono text-slate-200 font-semibold">{issuedPass.wifiCode}</div>
+                      <div className="text-[10px] text-slate-400">
+                        Guest Wi-Fi
+                      </div>
+                      <div className="font-mono text-slate-200 font-semibold">
+                        {issuedPass.wifiCode}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -588,7 +638,12 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 type="button"
                 onClick={() => {
                   setStep(1);
-                  setPassQrDataUrl('');setIssuedPass(null);setVerifiedCode('');setGeneralConsent(false);setHasInvite(false);setInviteCode('');
+                  setPassQrDataUrl('');
+                  setIssuedPass(null);
+                  setVerifiedCode('');
+                  setGeneralConsent(false);
+                  setHasInvite(false);
+                  setInviteCode('');
                   setFullName('');
                   setEmail('');
                   setPhone('');
@@ -605,33 +660,37 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       </div>
 
       {/* Bottom Sticky Regulatory Badge */}
-      <footer className="p-3 border-t border-slate-900 text-center text-[10px] text-slate-500 font-mono">
-        Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-      </footer>
+      {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
+        <footer className="p-3 border-t border-slate-900 text-center text-[10px] text-slate-500 font-mono">
+          Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+        </footer>
+      )}
     </div>
   );
 
   return (
     <div className="space-y-4">
       {/* Viewport mode toggle bar (allows testing on desktop in realistic mobile bezel or full-width) */}
-      <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
-        <div className="flex items-center gap-2 text-slate-300">
-          <SmartphoneNfc className="w-4 h-4 text-emerald-400" />
-          <span>Mobile Self Check-In Page (Accessible via Reception QR code)</span>
+      {showStaffControls && (
+        <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
+          <div className="flex items-center gap-2 text-slate-300">
+            <SmartphoneNfc className="w-4 h-4 text-emerald-400" />
+            <span>Mobile Self Check-In Page (Accessible via Reception QR code)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDeviceFrame(!deviceFrame)}
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>{deviceFrame ? 'Full Screen View' : 'Simulate Phone Frame'}</span>
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setDeviceFrame(!deviceFrame)}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
-          >
-            <Maximize2 className="w-3 h-3" />
-            <span>{deviceFrame ? 'Full Screen View' : 'Simulate Phone Frame'}</span>
-          </button>
-        </div>
-      </div>
+      )}
 
-      {deviceFrame ? (
+      {showStaffControls && deviceFrame ? (
         <div className="py-6 flex justify-center bg-slate-950/70 rounded-2xl border border-slate-900">
           {/* Simulated Smartphone Bezel */}
           <div className="w-full max-w-[400px] bg-slate-950 rounded-[40px] border-4 border-slate-800 shadow-2xl p-2 overflow-hidden ring-1 ring-slate-700/50">

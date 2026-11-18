@@ -1,0 +1,8 @@
+[
+  {
+    "deviceId": "gate-lagos-entrance",
+    "siteKey": "customer-a-lagos",
+    "tokenHashes": ["REPLACE_WITH_SHA256_OF_A_RANDOM_DEVICE_TOKEN"],
+    "enabled": true
+  }
+]

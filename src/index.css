@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -11,11 +11,58 @@
   }
 }
 
+/* Light theme: invert the slate scale and darken the emerald accents. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --color-slate-50: oklch(12.9% 0.042 264.695);
+  --color-slate-100: oklch(20.8% 0.042 265.755);
+  --color-slate-200: oklch(27.9% 0.041 260.031);
+  --color-slate-300: oklch(37.2% 0.044 257.287);
+  --color-slate-400: oklch(44.6% 0.043 257.281);
+  --color-slate-500: oklch(55.4% 0.046 257.417);
+  --color-slate-600: oklch(70.4% 0.04 256.788);
+  --color-slate-700: oklch(86.9% 0.022 252.894);
+  --color-slate-800: oklch(92.9% 0.013 255.508);
+  --color-slate-900: oklch(96.8% 0.007 247.896);
+  --color-slate-950: oklch(98.4% 0.003 247.858);
+  --color-emerald-300: oklch(43.2% 0.095 166.913);
+  --color-emerald-400: oklch(50.8% 0.118 165.612);
+  --color-emerald-950: oklch(95% 0.052 163.051);
+}
+:root[data-theme='light'] body {
+  background-color: var(--color-slate-950);
+}
+:root[data-theme='light'] .text-white {
+  color: oklch(12.9% 0.042 264.695);
+}
+
+/* White cards (badge, poster, invitation preview) keep their original colours. */
+:root[data-theme='light'] .bg-white {
+  --color-slate-50: oklch(98.4% 0.003 247.858);
+  --color-slate-100: oklch(96.8% 0.007 247.896);
+  --color-slate-200: oklch(92.9% 0.013 255.508);
+  --color-slate-300: oklch(86.9% 0.022 252.894);
+  --color-slate-400: oklch(70.4% 0.04 256.788);
+  --color-slate-500: oklch(55.4% 0.046 257.417);
+  --color-slate-600: oklch(44.6% 0.043 257.281);
+  --color-slate-700: oklch(37.2% 0.044 257.287);
+  --color-slate-800: oklch(27.9% 0.041 260.031);
+  --color-slate-900: oklch(20.8% 0.042 265.755);
+  --color-slate-950: oklch(12.9% 0.042 264.695);
+  --color-emerald-300: oklch(84.5% 0.143 164.978);
+  --color-emerald-400: oklch(76.5% 0.177 163.223);
+  --color-emerald-950: oklch(26.2% 0.051 172.552);
+}
+:root[data-theme='light'] .bg-white .text-white {
+  color: #fff;
+}
+
 @media print {
   body * {
     visibility: hidden;
   }
-  #printable-badge-area, #printable-badge-area * {
+  #printable-badge-area,
+  #printable-badge-area * {
     visibility: visible;
   }
   #printable-badge-area {

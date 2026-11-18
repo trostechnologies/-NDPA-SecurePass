@@ -1,0 +1,16 @@
+.git
+.env*
+.private
+node_modules
+dist
+securepass-data
+securepass-backups
+.npm-cache
+test-results
+playwright-report
+tests
+reference-documents
+*.sqlite*
+*.zip
+*.docx
+*.pdf

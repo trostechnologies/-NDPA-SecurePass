@@ -1,0 +1,20 @@
+{
+  email {$SECUREPASS_ACME_EMAIL}
+}
+
+{$SECUREPASS_HOSTNAME} {
+  encode zstd gzip
+  request_body {
+    max_size 20KB
+  }
+  reverse_proxy app:8080 {
+    transport http {
+      dial_timeout 5s
+      response_header_timeout 30s
+    }
+  }
+  header {
+    -Server
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+  }
+}

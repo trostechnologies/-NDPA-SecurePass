@@ -3,7 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Visitor, HostEmployee, PreRegistrationInvite, NDPAAuditLog, EmailNotification, AppUser } from '../types/visitor';
+import {
+  Visitor,
+  HostEmployee,
+  PreRegistrationInvite,
+  NDPAAuditLog,
+  EmailNotification,
+  AppUser,
+} from '../types/visitor';
 
 export const INITIAL_USERS: AppUser[] = [
   {
@@ -15,7 +22,8 @@ export const INITIAL_USERS: AppUser[] = [
     department: 'Executive Management',
     title: 'Managing Director & Facility Administrator',
     status: 'active',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
     lastLogin: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
     createdAt: '2026-01-10T08:00:00Z',
   },
@@ -28,7 +36,8 @@ export const INITIAL_USERS: AppUser[] = [
     department: 'Legal & NDPA Compliance',
     title: 'Data Protection Officer (DPO)',
     status: 'active',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
     lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
     createdAt: '2026-01-12T09:30:00Z',
   },
@@ -41,7 +50,8 @@ export const INITIAL_USERS: AppUser[] = [
     department: 'Human Capital Management',
     title: 'Head of Talent Acquisition',
     status: 'active',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     lastLogin: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
     createdAt: '2026-02-01T10:15:00Z',
   },
@@ -54,7 +64,8 @@ export const INITIAL_USERS: AppUser[] = [
     department: 'Enterprise Technology',
     title: 'Chief Information Security Officer',
     status: 'active',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
     lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     createdAt: '2026-02-15T11:45:00Z',
   },
@@ -67,7 +78,8 @@ export const INITIAL_USERS: AppUser[] = [
     department: 'Finance & Treasury',
     title: 'Chief Financial Officer',
     status: 'active',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
     lastLogin: new Date(Date.now() - 1000 * 60 * 60 * 48).toISOString(),
     createdAt: '2026-03-01T14:20:00Z',
   },
@@ -82,7 +94,8 @@ export const SAMPLE_HOSTS: HostEmployee[] = [
     department: 'Executive Boardroom',
     floor: '14th Floor, Tower A',
     title: 'Managing Director & CEO',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'HOST-02',
@@ -92,7 +105,8 @@ export const SAMPLE_HOSTS: HostEmployee[] = [
     department: 'Legal & NDPA Compliance',
     floor: '9th Floor, West Wing',
     title: 'Data Protection Officer (DPO)',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'HOST-03',
@@ -102,7 +116,8 @@ export const SAMPLE_HOSTS: HostEmployee[] = [
     department: 'Enterprise Technology & Infrastructure',
     floor: '6th Floor, IT Ops Hub',
     title: 'Chief Information Security Officer',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'HOST-04',
@@ -112,7 +127,8 @@ export const SAMPLE_HOSTS: HostEmployee[] = [
     department: 'Human Capital Management',
     floor: '4th Floor, Suite 402',
     title: 'Head of Talent Acquisition',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
   },
   {
     id: 'HOST-05',
@@ -122,7 +138,8 @@ export const SAMPLE_HOSTS: HostEmployee[] = [
     department: 'Finance & Treasury',
     floor: '11th Floor, East Wing',
     title: 'Chief Financial Officer',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
   },
 ];
 
@@ -204,7 +221,8 @@ export const INITIAL_VISITORS: Visitor[] = [
     checkInTime: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
     status: 'checked_in',
     hasBiometricPhoto: true,
-    photoUrl: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=200&auto=format&fit=crop&q=80',
+    photoUrl:
+      'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?w=200&auto=format&fit=crop&q=80',
     biometricConsentGranted: true,
     generalConsentGranted: true,
     consentTimestamp: new Date(Date.now() - 1000 * 60 * 16).toISOString(),
@@ -234,7 +252,8 @@ export const INITIAL_VISITORS: Visitor[] = [
     checkOutTime: new Date(Date.now() - 1000 * 60 * 50).toISOString(),
     status: 'checked_out',
     hasBiometricPhoto: true,
-    photoUrl: 'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=200&auto=format&fit=crop&q=80',
+    photoUrl:
+      'https://images.unsplash.com/photo-1522529599102-193c0d76b5b6?w=200&auto=format&fit=crop&q=80',
     biometricConsentGranted: true,
     generalConsentGranted: true,
     consentTimestamp: new Date(Date.now() - 1000 * 60 * 212).toISOString(),
@@ -297,7 +316,7 @@ export const INITIAL_VISITORS: Visitor[] = [
     wifiAccessGranted: false,
     badgeId: 'BDG-4075',
     notes: 'Anonymized on 2026-10-12 following formal Data Subject Erasure Request (DSAR-2026-04).',
-  }
+  },
 ];
 
 export const INITIAL_INVITATIONS: PreRegistrationInvite[] = [
@@ -354,7 +373,7 @@ export const INITIAL_INVITATIONS: PreRegistrationInvite[] = [
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
     specialInstructions: 'Hard hat and steel-toe safety boots will be provided at Security Post.',
     parkingReserved: true,
-  }
+  },
 ];
 
 export const INITIAL_AUDIT_LOGS: NDPAAuditLog[] = [
@@ -384,7 +403,8 @@ export const INITIAL_AUDIT_LOGS: NDPAAuditLog[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 42).toISOString(),
     actor: 'Reception Kiosk #02',
     action: 'PHOTO_SKIPPED_VOLUNTARY',
-    details: 'Visitor Halima Sanusi opted out of biometric photo. Access granted with standard government credential.',
+    details:
+      'Visitor Halima Sanusi opted out of biometric photo. Access granted with standard government credential.',
     visitorId: 'VIS-2026-002',
     lawfulBasis: 'NDPA 2023 Sec 30(2) & Sec 25(3)',
     complianceArticle: 'Voluntary Nature of Sensitive Biometric Capture',
@@ -404,11 +424,12 @@ export const INITIAL_AUDIT_LOGS: NDPAAuditLog[] = [
     timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 8).toISOString(),
     actor: 'Barr. Zainab Mohammed (DPO)',
     action: 'RIGHT_TO_ERASURE',
-    details: 'Executed cryptographic anonymization for Visitor record VIS-2026-006 per DSAR-2026-04.',
+    details:
+      'Executed cryptographic anonymization for Visitor record VIS-2026-006 per DSAR-2026-04.',
     visitorId: 'VIS-2026-006',
     lawfulBasis: 'NDPA 2023 Sec 37(1)',
     complianceArticle: 'Right to Erasure / Right to be Forgotten',
-  }
+  },
 ];
 
 export const INITIAL_NOTIFICATIONS: EmailNotification[] = [
@@ -419,7 +440,8 @@ export const INITIAL_NOTIFICATIONS: EmailNotification[] = [
     subject: 'Visitor Arrival Alert: Femi Babalola is at Reception (VI Tower)',
     type: 'HOST_ARRIVAL_ALERT',
     sentAt: new Date(Date.now() - 1000 * 60 * 85).toISOString(),
-    bodyPreview: 'Dear Tunde, your guest Femi Babalola from PwC Nigeria has completed NDPA check-in and is proceeding to the 11th floor with Badge #BDG-9102.',
+    bodyPreview:
+      'Dear Tunde, your guest Femi Babalola from PwC Nigeria has completed NDPA check-in and is proceeding to the 11th floor with Badge #BDG-9102.',
     status: 'Delivered',
   },
   {
@@ -429,7 +451,8 @@ export const INITIAL_NOTIFICATIONS: EmailNotification[] = [
     subject: 'VIP Arrival: Halima Sanusi (CBN) Checked In',
     type: 'HOST_ARRIVAL_ALERT',
     sentAt: new Date(Date.now() - 1000 * 60 * 40).toISOString(),
-    bodyPreview: 'Dear MD, your VIP guest Halima Sanusi from Central Bank of Nigeria has arrived and is waiting at the Executive Reception Lounge.',
+    bodyPreview:
+      'Dear MD, your VIP guest Halima Sanusi from Central Bank of Nigeria has arrived and is waiting at the Executive Reception Lounge.',
     status: 'Delivered',
   },
   {
@@ -439,7 +462,8 @@ export const INITIAL_NOTIFICATIONS: EmailNotification[] = [
     subject: 'Pre-Registration Pass & Access QR: Zenith Holdings Headquarters',
     type: 'GUEST_INVITE',
     sentAt: new Date(Date.now() - 1000 * 60 * 60 * 18).toISOString(),
-    bodyPreview: 'Dear Dr. Ikenna, you have been invited by Barr. Zainab Mohammed for the Annual NDPC External Privacy Audit. Your pass code is INV-7821.',
+    bodyPreview:
+      'Dear Dr. Ikenna, you have been invited by Barr. Zainab Mohammed for the Annual NDPC External Privacy Audit. Your pass code is INV-7821.',
     status: 'Delivered',
-  }
+  },
 ];
