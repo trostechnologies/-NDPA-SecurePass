@@ -332,7 +332,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
                     type="text"
                     value={guestOrg}
                     onChange={(e) => setGuestOrg(e.target.value)}
-                    placeholder="e.g. World Bank / Stanbic"
+                    placeholder="Your organisation"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                   />
                 </div>
@@ -422,7 +422,7 @@ export const PreRegistrationManager: React.FC<PreRegistrationManagerProps> = ({
             <div className="flex items-center justify-between border-b border-slate-200 pb-2">
               <div>
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  Zenith Holdings Tower Pass
+                  Facility Pass
                 </div>
                 <div className="text-sm font-bold text-slate-900">Digital Access Invitation</div>
               </div>

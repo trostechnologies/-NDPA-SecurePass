@@ -74,10 +74,12 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
               <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
-              <div className="text-xs font-mono font-bold text-emerald-400">
-                Controller registration (as configured):{' '}
-                {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-              </div>
+              {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
+                <div className="text-xs font-mono font-bold text-emerald-400">
+                  Controller registration (as configured):{' '}
+                  {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+                </div>
+              )}
               <h2 className="text-lg font-bold text-slate-100 tracking-tight mt-0.5">
                 Privacy Operations Center
               </h2>
@@ -336,8 +338,8 @@ export const NDPAComplianceHub: React.FC<NDPAComplianceHubProps> = ({
           <div>
             <div className="font-semibold text-slate-200">Configured Privacy Contact</div>
             <p className="text-slate-400 mt-0.5">
-              {NDPA_ORGANIZATION_INFO.dpoName} · {NDPA_ORGANIZATION_INFO.dpoEmail} · Tel:{' '}
-              {NDPA_ORGANIZATION_INFO.dpoPhone}
+              {NDPA_ORGANIZATION_INFO.dpoName} · {NDPA_ORGANIZATION_INFO.dpoEmail}
+              {NDPA_ORGANIZATION_INFO.dpoPhone && ` · Tel: ${NDPA_ORGANIZATION_INFO.dpoPhone}`}
             </p>
             <p className="text-[11px] text-slate-500 mt-0.5">
               Supervising Authority: Nigeria Data Protection Commission (NDPC), Headquarters, Abuja.

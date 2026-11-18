@@ -18,6 +18,7 @@ import {
   generatePassCode,
   generateBadgeId,
   generateWifiCode,
+  getInitials,
   NDPA_ORGANIZATION_INFO,
 } from '../../utils/ndpaCompliance';
 import {
@@ -45,6 +46,7 @@ interface MobileSelfCheckInProps {
   invitations: PreRegistrationInvite[];
   onCheckInComplete: (newVisitor: Visitor, inviteCode?: string) => Promise<Visitor>;
   onExitMobileView?: () => void;
+  showStaffControls?: boolean;
 }
 
 export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
@@ -52,6 +54,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
   invitations,
   onCheckInComplete,
   onExitMobileView,
+  showStaffControls = false,
 }) => {
   // Mobile device container wrapper toggle (for desktop evaluators)
   const [deviceFrame, setDeviceFrame] = useState<boolean>(false);
@@ -213,7 +216,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
           </div>
         </div>
 
-        {onExitMobileView && (
+        {showStaffControls && onExitMobileView && (
           <button
             type="button"
             onClick={onExitMobileView}
@@ -342,7 +345,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   type="text"
                   value={organization}
                   onChange={(e) => setOrganization(e.target.value)}
-                  placeholder="e.g. Zenith Bank / MTN Nigeria"
+                  placeholder="Your organisation"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 min-h-[44px]"
                 />
               </div>
@@ -411,12 +414,12 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <img
-                          src={h.avatar}
-                          alt={h.name}
-                          className="w-9 h-9 rounded-full object-cover border border-slate-700"
-                          referrerPolicy="no-referrer"
-                        />
+                        <div
+                          aria-hidden="true"
+                          className="w-9 h-9 flex-shrink-0 rounded-full border border-slate-700 bg-slate-800 text-slate-200 text-[11px] font-bold flex items-center justify-center"
+                        >
+                          {getInitials(h.name)}
+                        </div>
                         <div className="min-w-0">
                           <h4 className="text-xs font-semibold truncate text-slate-100">
                             {h.name}
@@ -473,7 +476,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                 onClick={() => setStep(3)}
                 className="w-2/3 h-12 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg active:scale-[0.98] transition-transform"
               >
-                <span>Photo &amp; Consent</span>
+                <span>Privacy &amp; Consent</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -594,7 +597,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                   </div>
                 )}
                 <span className="text-[9px] font-mono font-bold tracking-wider text-slate-500">
-                  HOLD NEAR TURNSTILE SCANNER
+                  SHOW AT RECEPTION
                 </span>
               </div>
 
@@ -605,7 +608,7 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
                     <Wifi className="w-4 h-4 text-emerald-400" />
                     <div>
                       <div className="text-[10px] text-slate-400">
-                        Guest Wi-Fi (SSID: Zenith-Guest)
+                        Guest Wi-Fi
                       </div>
                       <div className="font-mono text-slate-200 font-semibold">
                         {issuedPass.wifiCode}
@@ -652,33 +655,37 @@ export const MobileSelfCheckIn: React.FC<MobileSelfCheckInProps> = ({
       </div>
 
       {/* Bottom Sticky Regulatory Badge */}
-      <footer className="p-3 border-t border-slate-900 text-center text-[10px] text-slate-500 font-mono">
-        Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-      </footer>
+      {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
+        <footer className="p-3 border-t border-slate-900 text-center text-[10px] text-slate-500 font-mono">
+          Controller registration (as configured): {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+        </footer>
+      )}
     </div>
   );
 
   return (
     <div className="space-y-4">
       {/* Viewport mode toggle bar (allows testing on desktop in realistic mobile bezel or full-width) */}
-      <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
-        <div className="flex items-center gap-2 text-slate-300">
-          <SmartphoneNfc className="w-4 h-4 text-emerald-400" />
-          <span>Mobile Self Check-In Page (Accessible via Reception QR code)</span>
+      {showStaffControls && (
+        <div className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-xl text-xs">
+          <div className="flex items-center gap-2 text-slate-300">
+            <SmartphoneNfc className="w-4 h-4 text-emerald-400" />
+            <span>Mobile Self Check-In Page (Accessible via Reception QR code)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDeviceFrame(!deviceFrame)}
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>{deviceFrame ? 'Full Screen View' : 'Simulate Phone Frame'}</span>
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setDeviceFrame(!deviceFrame)}
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
-          >
-            <Maximize2 className="w-3 h-3" />
-            <span>{deviceFrame ? 'Full Screen View' : 'Simulate Phone Frame'}</span>
-          </button>
-        </div>
-      </div>
+      )}
 
-      {deviceFrame ? (
+      {showStaffControls && deviceFrame ? (
         <div className="py-6 flex justify-center bg-slate-950/70 rounded-2xl border border-slate-900">
           {/* Simulated Smartphone Bezel */}
           <div className="w-full max-w-[400px] bg-slate-950 rounded-[40px] border-4 border-slate-800 shadow-2xl p-2 overflow-hidden ring-1 ring-slate-700/50">

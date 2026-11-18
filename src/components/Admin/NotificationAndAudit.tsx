@@ -173,7 +173,7 @@ export const NotificationAndAudit: React.FC<NotificationAndAuditProps> = ({
             <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1 text-xs">
               <div>
                 <span className="text-slate-500">From:</span>{' '}
-                <span className="text-slate-300">reception-alerts@zenithholdings.ng</span>
+                <span className="text-slate-300">reception-alerts@example.com</span>
               </div>
               <div>
                 <span className="text-slate-500">To:</span>{' '}

@@ -21,7 +21,6 @@ import {
   Eye,
   EyeOff,
   UserCheck,
-  CheckCircle2,
 } from 'lucide-react';
 
 interface LiveAccessLogsProps {
@@ -146,10 +145,9 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
             <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
               <tr>
                 <th className="py-3 px-4">Visitor &amp; Pass Code</th>
-                <th className="py-3 px-4">Contact Telemetry</th>
+                <th className="py-3 px-4">Contact</th>
                 <th className="py-3 px-4">Host &amp; Destination</th>
                 <th className="py-3 px-4">Entry / Exit Time</th>
-                <th className="py-3 px-4">Biometric Status</th>
                 <th className="py-3 px-4">Status &amp; Clearance</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -157,7 +155,7 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
             <tbody className="divide-y divide-slate-800/60 font-sans">
               {filteredVisitors.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={6} className="py-12 text-center text-slate-500">
                     No visitor records match the current search or status filter.
                   </td>
                 </tr>
@@ -237,19 +235,6 @@ export const LiveAccessLogs: React.FC<LiveAccessLogsProps> = ({
                           </div>
                         ) : (
                           <div className="text-emerald-400 font-medium">On Site</div>
-                        )}
-                      </td>
-
-                      {/* Biometric Status (NDPA Sec 30) */}
-                      <td className="py-3 px-4 text-slate-400">
-                        {visitor.hasBiometricPhoto ? (
-                          <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Consented Photo
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                            Opt-Out (Sec 30)
-                          </span>
                         )}
                       </td>
 

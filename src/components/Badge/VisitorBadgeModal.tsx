@@ -128,9 +128,11 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({
                   <div className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                     VISITOR PASS
                   </div>
-                  <div className="text-[9px] text-slate-400 mt-0.5 font-mono">
-                    {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-                  </div>
+                  {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
+                    <div className="text-[9px] text-slate-400 mt-0.5 font-mono">
+                      {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -180,7 +182,9 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({
                   </p>
                   <div className="mt-2 text-[11px] text-slate-500">
                     <span className="font-semibold text-slate-700">Pass Code:</span>{' '}
-                    <span className="font-mono font-bold text-slate-900">{visitor.passCode}</span>
+                    <span className="font-mono font-bold text-slate-900 break-all select-all">
+                      {visitor.passCode}
+                    </span>
                   </div>
                   <div className="text-[11px] text-slate-500">
                     <span className="font-semibold text-slate-700">Clearance:</span>{' '}
@@ -224,7 +228,7 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({
                         <Wifi className="w-3 h-3 text-emerald-600" /> Guest Wi-Fi
                       </div>
                       <div className="font-mono text-slate-700 mt-0.5">
-                        {visitor.wifiCode || 'ZENITH-GUEST-ACCESS'}
+                        {visitor.wifiCode || 'GUEST-ACCESS'}
                       </div>
                     </div>
                   )}
@@ -250,8 +254,8 @@ export const VisitorBadgeModal: React.FC<VisitorBadgeModalProps> = ({
 
               {/* NDPA Footnote */}
               <div className="mt-3 pt-2 border-t border-slate-100 text-[8px] text-slate-400 text-center leading-tight">
-                Issued in compliance with Nigeria Data Protection Act (NDPA 2023). Must be worn
-                visibly at all times and surrendered upon departure.
+                Processed under this facility&apos;s privacy notice. Must be worn visibly at all
+                times and surrendered upon departure.
               </div>
             </div>
           </div>

@@ -466,7 +466,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                   value={formEmail}
                   readOnly={!!editingUser}
                   onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="b.sanusi@zenithholdings.ng"
+                  placeholder="a.user@example.com"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400"
                 />
               </div>

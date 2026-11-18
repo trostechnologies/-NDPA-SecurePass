@@ -9,8 +9,8 @@ import { Visitor, NDPAAuditLog } from '../types/visitor';
 export const NDPA_ORGANIZATION_INFO = {
   companyName: 'Development controller',
   facilityName: 'Development facility',
-  address: 'Not configured',
-  ndpcRegistrationNumber: 'Not configured',
+  address: '',
+  ndpcRegistrationNumber: '',
   dpoName: 'Privacy contact',
   dpoEmail: '',
   dpoPhone: '',
@@ -34,9 +34,15 @@ export function generateBadgeId(): string {
   return `BDG-${num}`;
 }
 
+export function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0]?.[0];
+  return (letters || '?').toUpperCase();
+}
+
 export function generateWifiCode(): string {
   const code = crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
-  return `ZENITH-GUEST-${code}`;
+  return `GUEST-${code}`;
 }
 
 export function maskPhoneNumber(phone: string): string {
@@ -138,9 +144,7 @@ export function exportDSARReport(visitor: Visitor): void {
 CONTROLLER DETAILS:
 Data Controller:     ${NDPA_ORGANIZATION_INFO.companyName}
 Facility:            ${NDPA_ORGANIZATION_INFO.facilityName}
-Address:             ${NDPA_ORGANIZATION_INFO.address}
-NDPC Reg No:         ${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-DPO in Charge:       ${NDPA_ORGANIZATION_INFO.dpoName} (${NDPA_ORGANIZATION_INFO.dpoEmail})
+${NDPA_ORGANIZATION_INFO.address ? `Address:             ${NDPA_ORGANIZATION_INFO.address}\n` : ''}${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber ? `NDPC Reg No:         ${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}\n` : ''}DPO in Charge:       ${NDPA_ORGANIZATION_INFO.dpoName} (${NDPA_ORGANIZATION_INFO.dpoEmail})
 Date Generated:      ${dateStr}
 
 DATA SUBJECT IDENTIFIERS:
@@ -205,8 +209,7 @@ export function exportNDPCAuditSummary(visitors: Visitor[], auditLogs: NDPAAudit
 AUDITED ENTITY:
 Organization:        ${NDPA_ORGANIZATION_INFO.companyName}
 Premises:            ${NDPA_ORGANIZATION_INFO.facilityName}
-NDPC Filing ID:      ${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-Data Protection Off: ${NDPA_ORGANIZATION_INFO.dpoName}
+${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber ? `NDPC Filing ID:      ${NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}\n` : ''}Data Protection Off: ${NDPA_ORGANIZATION_INFO.dpoName}
 Reporting Timestamp: ${new Date().toISOString()}
 
 1. LOADED RECORD METRICS (PAGINATED VIEW)

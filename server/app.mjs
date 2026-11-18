@@ -252,7 +252,7 @@ export async function createApplication(
         companyName: req.scope.companyName,
         facilityName: req.scope.facilityName,
         address: req.scope.address || '',
-        ndpcRegistrationNumber: req.scope.registration || 'Not configured',
+        ndpcRegistrationNumber: req.scope.registration || '',
         dpoName: req.scope.dpoName || 'Privacy contact',
         dpoEmail: req.scope.dpoEmail,
         dpoPhone: '',

@@ -18,6 +18,7 @@ import {
   generatePassCode,
   generateBadgeId,
   generateWifiCode,
+  getInitials,
   NDPA_ORGANIZATION_INFO,
 } from '../../utils/ndpaCompliance';
 import {
@@ -378,7 +379,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
               </div>
               <div>
                 <h2 className="text-sm font-bold text-slate-100">
-                  {step === 1 && 'Visitor Personal Telemetry'}
+                  {step === 1 && 'Your details'}
                   {step === 2 && 'Host & Purpose Specification'}
                   {step === 3 && 'Photo collection disabled'}
                   {step === 4 && 'Privacy acknowledgement'}
@@ -454,7 +455,7 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                     type="text"
                     value={organization}
                     onChange={(e) => setOrganization(e.target.value)}
-                    placeholder="e.g. KPMG Nigeria / Stanbic IBTC"
+                    placeholder="Your organisation"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
                   />
                 </div>
@@ -532,12 +533,12 @@ export const VisitorKiosk: React.FC<VisitorKioskProps> = ({
                         }`}
                       >
                         <div className="flex items-center gap-2.5">
-                          <img
-                            src={h.avatar}
-                            alt={h.name}
-                            className="w-9 h-9 rounded-full object-cover border border-slate-700"
-                            referrerPolicy="no-referrer"
-                          />
+                          <div
+                            aria-hidden="true"
+                            className="w-9 h-9 flex-shrink-0 rounded-full border border-slate-700 bg-slate-800 text-slate-200 text-[11px] font-bold flex items-center justify-center"
+                          >
+                            {getInitials(h.name)}
+                          </div>
                           <div className="min-w-0">
                             <h4 className="text-xs font-semibold truncate text-slate-100">
                               {h.name}

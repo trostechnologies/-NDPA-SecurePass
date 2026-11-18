@@ -30,7 +30,25 @@ import {
   AppUser,
 } from './types/visitor';
 import { NDPA_ORGANIZATION_INFO } from './utils/ndpaCompliance';
-import { CheckCircle2, AlertCircle, Smartphone, Lock, ShieldAlert } from 'lucide-react';
+import {
+  CheckCircle2,
+  AlertCircle,
+  Smartphone,
+  Lock,
+  ShieldAlert,
+  Sun,
+  Moon,
+} from 'lucide-react';
+
+type Theme = 'dark' | 'light';
+const THEME_KEY = 'securepass-theme';
+function readTheme(): Theme {
+  try {
+    return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
 
 export default function App() {
   // Check if URL specifies mobile mode (?mode=mobile)
@@ -54,6 +72,15 @@ export default function App() {
   const [pendingInviteCode, setPendingInviteCode] = useState('');
   const [startupError, setStartupError] = useState('');
   const [ready, setReady] = useState(false);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Storage unavailable; the choice applies to this page only.
+    }
+  }, [theme]);
   const loadPrivate = async () => {
     const all = {
       visitors: [] as Visitor[],
@@ -448,6 +475,7 @@ export default function App() {
             invitations={invitations}
             onCheckInComplete={handleCheckInComplete}
             onExitMobileView={() => setActiveTab('kiosk')}
+            showStaffControls={!!currentUser}
           />
         )}
 
@@ -538,10 +566,12 @@ export default function App() {
               {NDPA_ORGANIZATION_INFO.companyName}
             </span>{' '}
             · {NDPA_ORGANIZATION_INFO.facilityName}
-            <div className="text-[11px] text-slate-600 mt-0.5">
-              Controller registration (as configured):{' '}
-              {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-            </div>
+            {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
+              <div className="text-[11px] text-slate-600 mt-0.5">
+                Controller registration (as configured):{' '}
+                {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3 text-[11px]">
             <span aria-hidden="true" className="text-slate-700">
@@ -561,6 +591,15 @@ export default function App() {
             >
               {NDPA_ORGANIZATION_INFO.dpoEmail}
             </a>
+            <button
+              type="button"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              className="ml-2 p-1.5 rounded-lg border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </button>
           </div>
         </div>
       </footer>

@@ -103,12 +103,6 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
               </p>
             </div>
 
-            {/* Public Access Badge */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 rounded-full border border-emerald-200 text-[10px] font-bold font-mono">
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-              <span>PUBLIC GUEST ACCESS · NO GOOGLE SIGN-IN</span>
-            </div>
-
             {/* Big Scannable QR Code */}
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl shadow-inner flex flex-col items-center">
               {qrDataUrl ? (
@@ -159,13 +153,15 @@ export const ReceptionQRPosterModal: React.FC<ReceptionQRPosterModalProps> = ({
             </div>
 
             {/* NDPA Regulatory Footer */}
-            <div className="w-full pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[9px] text-slate-400 font-mono">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>
-                Controller registration (as configured):{' '}
-                {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
-              </span>
-            </div>
+            {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber && (
+              <div className="w-full pt-2 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[9px] text-slate-400 font-mono">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  Controller registration (as configured):{' '}
+                  {NDPA_ORGANIZATION_INFO.ndpcRegistrationNumber}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
